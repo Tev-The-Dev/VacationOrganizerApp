@@ -4,4 +4,6 @@
     <string name="excursion_list">Excursion List</string>
     <string name="associated_excursions">Associated Excursions</string>
     <string name="add_excursion">Add Excursion"</string>
+    <string name="vacation_detail">Vacation Detail</string>
+    <string name="excursion_detail">Excursion Detail"</string>
 </resources>
