@@ -7,5 +7,8 @@
     <string name="vacation_detail">Vacation Detail</string>
     <string name="excursion_detail">Excursion Detail"</string>
     <string name="add_to_vacation">Add to Vacation"</string>
+    <string name="home_image">WGU Owl"</string>
+    <string name="btn_view_vacations">View Vacations"</string>
+    <string name="btn_add_vacation">Add Vacation"</string>
 
 </resources>
