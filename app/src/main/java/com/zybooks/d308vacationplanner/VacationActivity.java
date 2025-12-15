@@ -1,14 +1,17 @@
 package com.zybooks.d308vacationplanner;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.zybooks.d308vacationplanner.R;
+import com.zybooks.d308vacationplanner.VacationDetailActivity;
 import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
@@ -33,11 +36,23 @@ public class VacationActivity extends AppCompatActivity {
         }
 
         LayoutInflater inflater = LayoutInflater.from(this);
-        for (Vacations v : vacations) {
+        for (final Vacations v : vacations) {
             View item = inflater.inflate(R.layout.vacation_item, container, false);
 
-            TextView title = item.findViewById(R.id.item_title);
-            title.setText(v.getTitle());
+            Button titleBtn = item.findViewById(R.id.item_title);
+            titleBtn.setText(v.getTitle());
+
+            titleBtn.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View view) {
+                    long id = (v.getId() != null) ? v.getId() : -1L;
+                    Intent intent = new Intent(VacationActivity.this, VacationDetailActivity.class);
+                    intent.putExtra("vacation_id", id);
+                    intent.putExtra("vacation_title", v.getTitle());
+                    startActivity(intent);
+                }
+            });
+
             container.addView(item);
         }
     }

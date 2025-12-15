@@ -27,5 +27,7 @@ public class MainActivity extends AppCompatActivity {
         View vacationsButton = findViewById(R.id.btn_view_vacations);
         vacationsButton.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, VacationActivity.class)));
+
+
     }
 }

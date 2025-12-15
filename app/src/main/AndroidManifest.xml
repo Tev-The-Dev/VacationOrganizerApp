@@ -11,6 +11,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.D308VacationPlanner">
+        <activity android:name=".VacationDetailActivity"
+            android:parentActivityName=".VacationActivity"
+            android:exported="true"/>
+
         <activity
             android:name=".VacationActivity"
             android:parentActivityName=".MainActivity"

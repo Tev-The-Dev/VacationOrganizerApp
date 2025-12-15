@@ -10,5 +10,6 @@
     <string name="home_image">WGU Owl"</string>
     <string name="btn_view_vacations">View Vacations"</string>
     <string name="btn_add_vacation">Add Vacation"</string>
+    <string name="vacation_detail_title">Vacation Detail</string>
 
 </resources>
