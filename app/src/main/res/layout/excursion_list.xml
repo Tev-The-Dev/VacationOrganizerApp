@@ -11,7 +11,7 @@
         android:text="@string/excursion_list"
         android:textSize="24sp"
         android:textColor="@android:color/black"
-        android:layout_marginTop="100dp"
+        android:layout_marginTop="130dp"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
