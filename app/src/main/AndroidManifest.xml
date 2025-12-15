@@ -12,6 +12,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.D308VacationPlanner">
         <activity
+            android:name=".VacationActivity"
+            android:parentActivityName=".MainActivity"
+            android:exported="true"/>
+        <activity
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>

@@ -1,15 +1,28 @@
-package com.zybooks.d308vacationplanner;
+package com.zybooks.d308vacationplanner.model;
 
 import java.util.Date;
+import androidx.annotation.NonNull;
+import androidx.room.ColumnInfo;
+import androidx.room.Entity;
+import androidx.room.PrimaryKey;
 
+@Entity(tableName="Vacations")
 public class Vacations {
+    @PrimaryKey(autoGenerate = true)
+    @ColumnInfo(name = "vacation_id")
     private Long mId;
+    @NonNull
+    @ColumnInfo(name = "vacation_title")
     private String mTitle;
+    @NonNull
+    @ColumnInfo(name = "accommodation")
     private String mAccommodation;
-    private Date mStartDate;
-    private Date mEndDate;
+    @ColumnInfo(name = "start_date")
+    private String mStartDate;
+    @ColumnInfo(name = "end_date")
+    private String mEndDate;
 
-    public void Vacation(String title, String accommodation, Date startDate, Date endDate) {
+    public Vacations(String title, String accommodation, String startDate, String endDate) {
         this.mTitle = title;
         this.mAccommodation = accommodation;
         this.mStartDate = startDate;
@@ -41,19 +54,19 @@ public class Vacations {
         this.mAccommodation = accommodation;
     }
 
-    public Date getStartDate() {
+    public String getStartDate() {
         return mStartDate;
     }
 
-    public void setStartDate(Date startDate) {
+    public void setStartDate(String startDate) {
         this.mStartDate = startDate;
     }
 
-    public Date getEndDate() {
+    public String getEndDate() {
         return mEndDate;
     }
 
-    public void setEndDate(Date endDate) {
+    public void setEndDate(String endDate) {
         this.mEndDate = endDate;
     }
 
