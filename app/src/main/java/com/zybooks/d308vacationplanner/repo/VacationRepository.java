@@ -1,9 +1,11 @@
 package com.zybooks.d308vacationplanner.repo;
 
 import android.content.Context;
+
 import androidx.room.Room;
-import com.zybooks.d308vacationplanner.model.Vacations;
+
 import com.zybooks.d308vacationplanner.model.Excursions;
+import com.zybooks.d308vacationplanner.model.Vacations;
 
 import java.util.List;
 
@@ -71,6 +73,7 @@ public class VacationRepository {
         mExcursionDao.insertExcursion(excursion7);
     }
 
+    // Vacation methods
     public void addVacation(Vacations vacation) {
         long vacationId = mVacationDao.insertVacation(vacation);
         vacation.setId(vacationId);
@@ -92,6 +95,7 @@ public class VacationRepository {
         mVacationDao.deleteVacation(vacation);
     }
 
+    // Excursion methods
     public void addExcursion(Excursions excursion) {
         long excursionId = mExcursionDao.insertExcursion(excursion);
         excursion.setId(excursionId);

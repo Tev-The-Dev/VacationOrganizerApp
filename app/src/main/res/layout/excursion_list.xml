@@ -2,49 +2,16 @@
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:layout_marginTop="130dp">
-
-    <LinearLayout
-        android:id="@+id/action_buttons"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp"
-        android:background="?attr/selectableItemBackground"
-        android:elevation="2dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <Button
-            android:id="@+id/delete_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:enabled="false"
-            android:text="@string/delete_excursion_button" />
-
-        <Button
-            android:id="@+id/edit_button"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:enabled="false"
-            android:text="@string/edit_excursion_button" />
-
-    </LinearLayout>
+    android:layout_height="match_parent">
 
     <TextView
-        android:id="@+id/excursion_title"
-        android:layout_width="0dp"
+        android:id="@+id/vacation_title"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/excursion_list"
         android:textSize="24sp"
-        android:textColor="@android:color/black"
-        android:layout_marginTop="12dp"
-        app:layout_constraintTop_toBottomOf="@id/action_buttons"
+        android:layout_marginTop="130dp"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
@@ -53,9 +20,8 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:fillViewport="true"
-        android:clipToPadding="false"
-        app:layout_constraintTop_toBottomOf="@id/excursion_title"
-        app:layout_constraintBottom_toTopOf="@+id/excursion_bottom_button_bar"
+        app:layout_constraintTop_toBottomOf="@id/vacation_title"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -67,23 +33,24 @@
             android:padding="16dp" />
 
     </ScrollView>
-
     <LinearLayout
-        android:id="@+id/excursion_bottom_button_bar"
+        android:id="@+id/bottom_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:padding="12dp"
+        android:padding="8dp"
+        android:background="?android:attr/windowBackground"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <Button
-            android:id="@+id/add_excursion"
+            android:id="@+id/btn_add_vacations"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/add_excursion" />
+            android:text="@string/btn_add_excursion" />
+
 
     </LinearLayout>
 

@@ -1,4 +1,3 @@
-// java
 package com.zybooks.d308vacationplanner;
 
 import android.content.ActivityNotFoundException;
@@ -25,6 +24,7 @@ public class VacationDetailActivity extends AppCompatActivity {
     private static final int REQUEST_ADD_EXCURSION = 1001;
     private static final int REQUEST_EDIT_VACATION = 2001;
     private static final int REQUEST_DELETE_VACATION = 3001;
+    private static final int REQUEST_VIEW_EXCURSIONS = 4001; // new
 
     private static final String KEY_VACATION_ID = "key_vacation_id";
     private static final String KEY_VACATION_TITLE = "key_vacation_title";
@@ -83,7 +83,8 @@ public class VacationDetailActivity extends AppCompatActivity {
                 }
                 intent.putExtra("vacation_id", vacationIdToSend);
 
-                startActivity(intent);
+                // Launch for result so returning list can signal to reload details
+                startActivityForResult(intent, REQUEST_VIEW_EXCURSIONS);
             });
         }
 
@@ -189,6 +190,9 @@ public class VacationDetailActivity extends AppCompatActivity {
                 // not deleted or cancelled -> refresh UI
                 reloadVacationDetails();
             }
+        } else if (requestCode == REQUEST_VIEW_EXCURSIONS) {
+            // Coming back from ExcursionListActivity -> reload to reflect any excursion changes
+            reloadVacationDetails();
         }
     }
 
@@ -235,11 +239,7 @@ public class VacationDetailActivity extends AppCompatActivity {
             mAccommodation = safeString(mFound, "getAccommodation", "getAccomodation");
             mStartDate = safeString(mFound, "getStartDate", "getStart");
             mEndDate = safeString(mFound, "getEndDate", "getEnd");
-
-            // Notification scheduling/instant notify removed from detail screen.
-            // Scheduling and today's notifications are handled by MainActivity / add/edit flows.
         } else {
-            // no repository object found; use any saved/intent fields
             if (titleView != null) titleView.setText(mTitle != null ? mTitle : "");
             if (accomView != null) accomView.setText(mAccommodation != null ? mAccommodation : "");
             if (startView != null) startView.setText(mStartDate != null ? mStartDate : "");

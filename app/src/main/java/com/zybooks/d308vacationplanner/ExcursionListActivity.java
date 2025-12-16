@@ -1,15 +1,10 @@
-// java
 package com.zybooks.d308vacationplanner;
 
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.Bundle;
-import android.util.Log;
-import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -19,290 +14,154 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.zybooks.d308vacationplanner.model.Excursions;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
-import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.List;
 
 public class ExcursionListActivity extends AppCompatActivity {
-    private static final String TAG = "ExcursionListActivity";
-    private static final int REQUEST_ADD_EXCURSION = 1001;
-    private static final int REQUEST_EDIT_EXCURSION = 1002;
+
+    private static final int REQ_ADD = 100;
+    private static final int REQ_DETAIL = 101;
 
     private long mVacationId = -1L;
-    private long mSelectedExcursionId = -1L;
-    private View mSelectedRowView = null;
-
-    private Button mEditTop;
-    private Button mDeleteTop;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.excursion_list);
 
-        Intent intent = getIntent();
-        if (intent != null && intent.hasExtra("vacation_id")) {
-            mVacationId = intent.getLongExtra("vacation_id", -1L);
+        // show Up button in action bar
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
 
-        // Wire Add button (unchanged)
-        TextView titleView = findViewById(R.id.excursion_title);
-        View addVacationButton = findViewById(R.id.add_excursion);
-        if (addVacationButton != null) {
-            addVacationButton.setOnClickListener(v -> {
-                Intent addIntent = new Intent(ExcursionListActivity.this, AddExcursionActivity.class);
-
-                String titleText = titleView != null ? titleView.getText().toString() : "";
-                addIntent.putExtra("vacation_title", titleText);
-
-                TextView accomView = findViewById(R.id.detail_accommodation);
-                TextView startView = findViewById(R.id.detail_start_date);
-                TextView endView = findViewById(R.id.detail_end_date);
-                addIntent.putExtra("vacation_accommodation", accomView != null ? accomView.getText().toString() : "");
-                addIntent.putExtra("vacation_start_date", startView != null ? startView.getText().toString() : "");
-                addIntent.putExtra("vacation_end_date", endView != null ? endView.getText().toString() : "");
-
-                addIntent.putExtra("vacation_id", mVacationId);
-
-                startActivityForResult(addIntent, REQUEST_ADD_EXCURSION);
-            });
+        // Restore saved state first so the filter persists across recreations
+        if (savedInstanceState != null) {
+            mVacationId = savedInstanceState.getLong("vacation_id", -1L);
+            String vacationTitle = savedInstanceState.getString("vacation_title");
+            if (vacationTitle != null && !vacationTitle.isEmpty()) {
+                TextView titleView = findViewById(R.id.vacation_title);
+                if (titleView != null) titleView.setText(vacationTitle);
+            }
         } else {
-            Log.w(TAG, "Add excursion button (R.id.add_excursion) not found.");
-        }
-
-        // Wire top edit/delete buttons to act on the selected row
-        mEditTop = findViewById(R.id.edit_button);
-        mDeleteTop = findViewById(R.id.delete_button);
-
-        // ensure buttons start disabled (layout may already set them disabled)
-        if (mEditTop != null) mEditTop.setEnabled(false);
-        if (mDeleteTop != null) mDeleteTop.setEnabled(false);
-
-        if (mEditTop != null) {
-            mEditTop.setOnClickListener(v -> {
-                if (mSelectedExcursionId == -1L) {
-                    Log.i(TAG, "No excursion selected to edit.");
-                    return;
-                }
-                Excursions e = findExcursionById(mSelectedExcursionId);
-                Intent edit = new Intent(ExcursionListActivity.this, EditExcursionActivity.class);
-                edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_ID, mSelectedExcursionId);
-                if (e != null) {
-                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_TITLE, getStringField(e, "getTitle", "getExcursionTitle", "getName"));
-                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_DATE, getStringField(e, "getExcursionDate", "getDate", "getExcDate"));
-                }
-
-                // Pass vacation start/end so EditExcursionActivity can validate range
-                TextView startView = findViewById(R.id.detail_start_date);
-                TextView endView = findViewById(R.id.detail_end_date);
-                if (startView != null) edit.putExtra(EditExcursionActivity.EXTRA_VACATION_START, startView.getText().toString());
-                if (endView != null) edit.putExtra(EditExcursionActivity.EXTRA_VACATION_END, endView.getText().toString());
-
-                startActivityForResult(edit, REQUEST_EDIT_EXCURSION);
-            });
-        }
-
-        if (mDeleteTop != null) {
-            mDeleteTop.setOnClickListener(v -> {
-                if (mSelectedExcursionId == -1L) {
-                    Log.i(TAG, "No excursion selected to delete.");
-                    return;
-                }
-                // Best-effort delete on repository
-                VacationRepository repo = VacationRepository.getInstance(this);
-                if (repo != null) {
-                    try {
-                        Method delLong = repo.getClass().getMethod("deleteExcursion", long.class);
-                        delLong.invoke(repo, mSelectedExcursionId);
-                    } catch (NoSuchMethodException ns1) {
-                        try {
-                            Method delObj = repo.getClass().getMethod("deleteExcursion", Excursions.class);
-                            Excursions target = findExcursionById(mSelectedExcursionId);
-                            if (target != null) delObj.invoke(repo, target);
-                        } catch (Exception ignored) {
-                        }
-                    } catch (Exception e) {
-                        Log.w(TAG, "Failed to call repository delete method", e);
-                    }
-                }
-                // reset selection and reload
-                mSelectedExcursionId = -1L;
-                mSelectedRowView = null;
-                if (mEditTop != null) mEditTop.setEnabled(false);
-                if (mDeleteTop != null) mDeleteTop.setEnabled(false);
-                loadExcursions();
-            });
-        }
-
-        // Initial load
-        loadExcursions();
-    }
-
-    // Populate / refresh excursions list and allow selecting a row
-    private void loadExcursions() {
-        VacationRepository repo = VacationRepository.getInstance(this);
-        List<Excursions> all = (repo != null) ? repo.getExcursions() : null;
-
-        LinearLayout container = findViewById(R.id.vacation_container);
-        if (container == null) {
-            Log.w(TAG, "LinearLayout with id R.id.vacation_container not found; cannot display excursions.");
-            return;
-        }
-
-        container.removeAllViews();
-        // clear selection when reloading
-        mSelectedExcursionId = -1L;
-        mSelectedRowView = null;
-        if (mEditTop != null) mEditTop.setEnabled(false);
-        if (mDeleteTop != null) mDeleteTop.setEnabled(false);
-
-        List<Excursions> filtered = new ArrayList<>();
-        if (all != null) {
-            for (Excursions e : all) {
-                if (e == null) continue;
-                Long vid = getLongField(e, "getVacationId", "getVacId", "getVacation_id");
-                if (vid != null && vid.longValue() == mVacationId) {
-                    filtered.add(e);
+            Intent intent = getIntent();
+            if (intent != null) {
+                mVacationId = intent.getLongExtra("vacation_id", -1L);
+                String vacationTitle = intent.getStringExtra("vacation_title");
+                if (vacationTitle != null && !vacationTitle.isEmpty()) {
+                    TextView titleView = findViewById(R.id.vacation_title);
+                    if (titleView != null) titleView.setText(vacationTitle);
                 }
             }
         }
 
-        if (filtered.isEmpty()) {
-            TextView empty = createRowTextView("No excursions");
-            container.addView(empty);
-            return;
-        }
-
-        LayoutInflater inflater = LayoutInflater.from(this);
-        for (final Excursions e : filtered) {
-            String title = getStringField(e, "getTitle", "getExcursionTitle", "getName");
-            String date = getStringField(e, "getExcursionDate", "getDate", "getExcDate");
-            String rowText = title + (date.isEmpty() ? "" : " \u2014 " + date);
-
-            // Create a simple selectable row using the helper
-            TextView row = createRowTextView(rowText);
-            // store the excursion id as tag for retrieval (robust numeric handling)
-            Long id = getLongField(e, "getId", "getExcursionId", "get_id");
-            row.setTag(id);
-            row.setClickable(true);
-            row.setOnClickListener(v -> {
-                Object tag = v.getTag();
-                Long tagId = null;
-                if (tag instanceof Number) tagId = ((Number) tag).longValue();
-                selectRow(v, tagId);
+        View addExcursionsButton = findViewById(R.id.btn_add_vacations);
+        if (addExcursionsButton != null) {
+            addExcursionsButton.setVisibility(View.VISIBLE);
+            addExcursionsButton.setOnClickListener(v -> {
+                Intent addIntent = new Intent(ExcursionListActivity.this, AddExcursionActivity.class);
+                addIntent.putExtra("vacation_id", mVacationId);
+                startActivityForResult(addIntent, REQ_ADD);
             });
-
-            container.addView(row);
-        }
-    }
-
-    private void selectRow(View row, Long excursionId) {
-        if (row == null || excursionId == null) return;
-
-        // un-highlight previous
-        if (mSelectedRowView != null) {
-            mSelectedRowView.setBackgroundColor(Color.TRANSPARENT);
         }
 
-        // highlight new
-        row.setBackgroundColor(Color.parseColor("#D0E8FF")); // light blue
-        mSelectedRowView = row;
-        mSelectedExcursionId = excursionId.longValue();
-
-        // enable top buttons
-        if (mEditTop != null) mEditTop.setEnabled(true);
-        if (mDeleteTop != null) mDeleteTop.setEnabled(true);
+        loadExcursions();
     }
 
-    private Excursions findExcursionById(long id) {
-        VacationRepository repo = VacationRepository.getInstance(this);
-        if (repo == null) return null;
-        List<Excursions> all = repo.getExcursions();
-        if (all == null) return null;
-        for (Excursions e : all) {
-            if (e == null) continue;
-            Long eid = getLongField(e, "getId", "getExcursionId", "get_id");
-            if (eid != null && eid.longValue() == id) return e;
-        }
-        return null;
-    }
-
-    private TextView createRowTextView(String text) {
-        TextView tv = new TextView(this);
-        tv.setText(text);
-        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        int pad = dpToPx(8);
-        tv.setPadding(pad, pad, pad, pad);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        tv.setLayoutParams(lp);
-        return tv;
-    }
-
-    private int dpToPx(int dp) {
-        return Math.round(dp * getResources().getDisplayMetrics().density);
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putLong("vacation_id", mVacationId);
+        TextView titleView = findViewById(R.id.vacation_title);
+        if (titleView != null) outState.putString("vacation_title", titleView.getText().toString());
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if ((requestCode == REQUEST_ADD_EXCURSION || requestCode == REQUEST_EDIT_EXCURSION) && resultCode == RESULT_OK) {
+        if ((requestCode == REQ_ADD || requestCode == REQ_DETAIL) && resultCode == RESULT_OK) {
             loadExcursions();
+            // Notify parent (VacationDetailActivity) that something changed so it can reload
+            setResult(RESULT_OK);
         }
     }
 
     @Override
-    public boolean onSupportNavigateUp() {
-        finish();
-        return true;
+    public void onBackPressed() {
+        // ensure parent reloads and preserve single instance
+        setResult(RESULT_OK);
+        super.onBackPressed();
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
+            // Up pressed - finish and signal parent to reload
+            setResult(RESULT_OK);
             finish();
             return true;
         }
         return super.onOptionsItemSelected(item);
     }
 
-    // Helpers: try multiple getter names via reflection and return first non-null string
-    private String getStringField(Excursions e, String... getters) {
-        if (e == null || getters == null) return "";
-        for (String g : getters) {
-            try {
-                Method m = e.getClass().getMethod(g);
-                Object res = m.invoke(e);
-                if (res != null) return String.valueOf(res);
-            } catch (NoSuchMethodException ignored) {
-            } catch (Exception ex) {
-                Log.w(TAG, "Failed to invoke " + g + " on Excursions", ex);
-            }
-        }
-        return "";
+    @Override
+    public boolean onSupportNavigateUp() {
+        setResult(RESULT_OK);
+        finish();
+        return true;
     }
 
-    // Helpers: try multiple getter names and return first non-null Long
-    private Long getLongField(Excursions e, String... getters) {
-        if (e == null || getters == null) return null;
-        for (String g : getters) {
-            try {
-                Method m = e.getClass().getMethod(g);
-                Object res = m.invoke(e);
-                if (res instanceof Number) {
-                    return ((Number) res).longValue();
-                } else if (res != null) {
-                    try {
-                        return Long.parseLong(String.valueOf(res));
-                    } catch (NumberFormatException ignored) { }
-                }
-            } catch (NoSuchMethodException ignored) {
-            } catch (Exception ex) {
-                Log.w(TAG, "Failed to invoke " + g + " on Excursions", ex);
-            }
+    private void loadExcursions() {
+        LinearLayout container = findViewById(R.id.vacation_container);
+        if (container == null) return;
+
+        container.removeAllViews();
+
+        VacationRepository repo = VacationRepository.getInstance(this);
+        if (repo == null) return;
+
+        List<Excursions> excursions = repo.getExcursions();
+        if (excursions == null || excursions.isEmpty()) {
+            TextView empty = new TextView(this);
+            empty.setText("No excursions");
+            empty.setTextSize(18f);
+            container.addView(empty);
+            return;
         }
-        return null;
+
+        LayoutInflater inflater = LayoutInflater.from(this);
+        int added = 0;
+        for (final Excursions e : excursions) {
+            if (e == null) continue;
+            Long vid = e.getVacationId();
+            if (mVacationId != -1L) {
+                if (vid == null || vid.longValue() != mVacationId) {
+                    continue;
+                }
+            }
+
+            View item = inflater.inflate(R.layout.excursion_item, container, false);
+
+            Button titleBtn = item.findViewById(R.id.item_title);
+            String title = (e.getTitle() != null) ? e.getTitle() : "";
+            titleBtn.setText(title);
+
+            titleBtn.setOnClickListener(view -> {
+                long id = (e.getId() != null) ? e.getId() : -1L;
+                Intent intent = new Intent(ExcursionListActivity.this, ExcursionDetailActivity.class);
+                intent.putExtra("excursion_id", id);
+                intent.putExtra("excursion_title", title);
+                intent.putExtra("vacation_id", mVacationId);
+                startActivityForResult(intent, REQ_DETAIL);
+            });
+
+            container.addView(item);
+            added++;
+        }
+
+        if (added == 0) {
+            TextView empty = new TextView(this);
+            empty.setText("No excursions");
+            empty.setTextSize(18f);
+            container.addView(empty);
+        }
     }
 }
