@@ -1,3 +1,4 @@
+// java
 package com.zybooks.d308vacationplanner;
 
 import android.content.Intent;
@@ -12,6 +13,9 @@ import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 public class AddVacationActivity extends AppCompatActivity {
@@ -36,6 +40,36 @@ public class AddVacationActivity extends AppCompatActivity {
 
             if (title.isEmpty()) {
                 Toast.makeText(this, "Title is required", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Validate date format YYYY-MM-DD
+            String pattern = "\\d{4}-\\d{2}-\\d{2}";
+            if (!start.matches(pattern) || !end.matches(pattern)) {
+                Toast.makeText(this, "Dates must be formatted `YYYY-MM-DD`", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Parse dates and check logical constraints
+            LocalDate startDate;
+            LocalDate endDate;
+            try {
+                DateTimeFormatter fmt = DateTimeFormatter.ISO_LOCAL_DATE;
+                startDate = LocalDate.parse(start, fmt);
+                endDate = LocalDate.parse(end, fmt);
+            } catch (DateTimeParseException ex) {
+                Toast.makeText(this, "Invalid date values; use `YYYY-MM-DD`", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            LocalDate today = LocalDate.now();
+            if (!startDate.isAfter(today)) {
+                Toast.makeText(this, "Start date must be after today", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!endDate.isAfter(startDate)) {
+                Toast.makeText(this, "End date must be after start date", Toast.LENGTH_SHORT).show();
                 return;
             }
 
