@@ -1,12 +1,19 @@
 package com.zybooks.d308vacationplanner;
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.zybooks.d308vacationplanner.model.Excursions;
 import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
@@ -104,13 +111,40 @@ public class VacationDetailActivity extends AppCompatActivity {
     }
 
     @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater inflater = getMenuInflater();
+        inflater.inflate(R.menu.menu_vacation_detail, menu);
+        return true;
+    }
+
+    @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         // handle Up navigation by finishing this activity to preserve the parent instance/state
         if (item.getItemId() == android.R.id.home) {
             finish();
             return true;
         }
+        if (item.getItemId() == R.id.action_share) {
+            sendVacationByEmail();
+            return true;
+        }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void sendVacationByEmail() {
+        String subject = buildShareSubject();
+        String body = buildShareBody();
+
+        // Use ACTION_SENDTO with mailto: to restrict to email apps
+        String uriText = "mailto:?subject=" + Uri.encode(subject) + "&body=" + Uri.encode(body);
+        Uri mailUri = Uri.parse(uriText);
+        Intent emailIntent = new Intent(Intent.ACTION_SENDTO, mailUri);
+
+        try {
+            startActivity(emailIntent);
+        } catch (ActivityNotFoundException ex) {
+            Toast.makeText(this, "No email app available", Toast.LENGTH_SHORT).show();
+        }
     }
 
     @Override
@@ -218,5 +252,74 @@ public class VacationDetailActivity extends AppCompatActivity {
             } catch (Exception ignored) { }
         }
         return "";
+    }
+
+    // Build share subject
+    private String buildShareSubject() {
+        String title = mTitle != null ? mTitle : "";
+        String start = mStartDate != null ? mStartDate : "";
+        String end = mEndDate != null ? mEndDate : "";
+        if (!start.isEmpty() || !end.isEmpty()) {
+            return "Vacation: " + title + " (" + start + " - " + end + ")";
+        }
+        return "Vacation: " + title;
+    }
+
+    // Build share body including excursions for this vacation
+    private String buildShareBody() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Title: ").append(mTitle != null ? mTitle : "").append("\n");
+        sb.append("Accommodation: ").append(mAccommodation != null ? mAccommodation : "").append("\n");
+        sb.append("Start: ").append(mStartDate != null ? mStartDate : "").append("\n");
+        sb.append("End: ").append(mEndDate != null ? mEndDate : "").append("\n\n");
+
+        sb.append("Excursions:\n");
+
+        VacationRepository repo = VacationRepository.getInstance(this);
+        if (repo != null) {
+            try {
+                List<Excursions> excursions = repo.getExcursions();
+                if (excursions != null && !excursions.isEmpty()) {
+                    int idx = 1;
+                    for (Excursions ex : excursions) {
+                        try {
+                            Long vacId = null;
+                            try {
+                                // try typed getter first
+                                Method gv = ex.getClass().getMethod("getVacationId");
+                                Object val = gv.invoke(ex);
+                                if (val != null) vacId = Long.parseLong(String.valueOf(val));
+                            } catch (Exception ignored) { }
+
+                            if (vacId == null) {
+                                // fallback via reflection for common field/getter names
+                                try {
+                                    Method gv2 = ex.getClass().getMethod("getVacation");
+                                    Object val2 = gv2.invoke(ex);
+                                    if (val2 != null) vacId = Long.parseLong(String.valueOf(val2));
+                                } catch (Exception ignore) { }
+                            }
+
+                            if (vacId != null && vacId.longValue() == mId) {
+                                String etitle = safeString(ex, "getTitle", "getExcursionTitle");
+                                String edate = safeString(ex, "getExcursionDate", "getDate");
+                                sb.append(idx++).append(". ").append(etitle);
+                                if (!edate.isEmpty()) sb.append(" (").append(edate).append(")");
+                                sb.append("\n");
+                            }
+                        } catch (Exception ignored) { }
+                    }
+                    if (idx == 1) sb.append("  (no excursions)\n");
+                } else {
+                    sb.append("  (no excursions)\n");
+                }
+            } catch (Exception ignored) {
+                sb.append("  (unable to read excursions)\n");
+            }
+        } else {
+            sb.append("  (no repository)\n");
+        }
+
+        return sb.toString();
     }
 }
