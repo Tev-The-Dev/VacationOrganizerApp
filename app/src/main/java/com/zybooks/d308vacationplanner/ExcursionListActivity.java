@@ -1,3 +1,4 @@
+// java
 package com.zybooks.d308vacationplanner;
 
 import android.content.Intent;
@@ -87,8 +88,8 @@ public class ExcursionListActivity extends AppCompatActivity {
                 Intent edit = new Intent(ExcursionListActivity.this, EditExcursionActivity.class);
                 edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_ID, mSelectedExcursionId);
                 if (e != null) {
-                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_TITLE, e.getTitle() != null ? e.getTitle() : "");
-                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_DATE, e.getExcursionDate() != null ? e.getExcursionDate() : "");
+                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_TITLE, getStringField(e, "getTitle", "getExcursionTitle", "getName"));
+                    edit.putExtra(EditExcursionActivity.EXTRA_EXCURSION_DATE, getStringField(e, "getExcursionDate", "getDate", "getExcDate"));
                 }
 
                 // Pass vacation start/end so EditExcursionActivity can validate range
@@ -159,7 +160,7 @@ public class ExcursionListActivity extends AppCompatActivity {
         if (all != null) {
             for (Excursions e : all) {
                 if (e == null) continue;
-                Long vid = e.getVacationId();
+                Long vid = getLongField(e, "getVacationId", "getVacId", "getVacation_id");
                 if (vid != null && vid.longValue() == mVacationId) {
                     filtered.add(e);
                 }
@@ -174,18 +175,20 @@ public class ExcursionListActivity extends AppCompatActivity {
 
         LayoutInflater inflater = LayoutInflater.from(this);
         for (final Excursions e : filtered) {
-            String title = e.getTitle() != null ? e.getTitle() : "";
-            String date = e.getExcursionDate() != null ? e.getExcursionDate() : "";
-            String rowText = title + (date.isEmpty() ? "" : " — " + date);
+            String title = getStringField(e, "getTitle", "getExcursionTitle", "getName");
+            String date = getStringField(e, "getExcursionDate", "getDate", "getExcDate");
+            String rowText = title + (date.isEmpty() ? "" : " \u2014 " + date);
 
             // Create a simple selectable row using the helper
             TextView row = createRowTextView(rowText);
-            // store the excursion id as tag for retrieval
-            Long id = e.getId();
+            // store the excursion id as tag for retrieval (robust numeric handling)
+            Long id = getLongField(e, "getId", "getExcursionId", "get_id");
             row.setTag(id);
             row.setClickable(true);
             row.setOnClickListener(v -> {
-                Long tagId = (Long) v.getTag();
+                Object tag = v.getTag();
+                Long tagId = null;
+                if (tag instanceof Number) tagId = ((Number) tag).longValue();
                 selectRow(v, tagId);
             });
 
@@ -218,7 +221,7 @@ public class ExcursionListActivity extends AppCompatActivity {
         if (all == null) return null;
         for (Excursions e : all) {
             if (e == null) continue;
-            Long eid = e.getId();
+            Long eid = getLongField(e, "getId", "getExcursionId", "get_id");
             if (eid != null && eid.longValue() == id) return e;
         }
         return null;
@@ -263,5 +266,43 @@ public class ExcursionListActivity extends AppCompatActivity {
             return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    // Helpers: try multiple getter names via reflection and return first non-null string
+    private String getStringField(Excursions e, String... getters) {
+        if (e == null || getters == null) return "";
+        for (String g : getters) {
+            try {
+                Method m = e.getClass().getMethod(g);
+                Object res = m.invoke(e);
+                if (res != null) return String.valueOf(res);
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception ex) {
+                Log.w(TAG, "Failed to invoke " + g + " on Excursions", ex);
+            }
+        }
+        return "";
+    }
+
+    // Helpers: try multiple getter names and return first non-null Long
+    private Long getLongField(Excursions e, String... getters) {
+        if (e == null || getters == null) return null;
+        for (String g : getters) {
+            try {
+                Method m = e.getClass().getMethod(g);
+                Object res = m.invoke(e);
+                if (res instanceof Number) {
+                    return ((Number) res).longValue();
+                } else if (res != null) {
+                    try {
+                        return Long.parseLong(String.valueOf(res));
+                    } catch (NumberFormatException ignored) { }
+                }
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception ex) {
+                Log.w(TAG, "Failed to invoke " + g + " on Excursions", ex);
+            }
+        }
+        return null;
     }
 }

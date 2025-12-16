@@ -77,6 +77,30 @@ public class NotificationScheduler {
         }
     }
 
+    public static void scheduleExcursionNotification(Context ctx, long vacationId, String excursionTitle, String dateStr) {
+        if (ctx == null || dateStr == null) return;
+
+        Long whenMillis = parseDateToMillis(dateStr);
+        if (whenMillis == null) return;
+
+        // compute today's start-of-day millis
+        java.util.Calendar todayStart = java.util.Calendar.getInstance();
+        todayStart.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        todayStart.set(java.util.Calendar.MINUTE, 0);
+        todayStart.set(java.util.Calendar.SECOND, 0);
+        todayStart.set(java.util.Calendar.MILLISECOND, 0);
+        long todayStartMillis = todayStart.getTimeInMillis();
+
+        if (isDateToday(dateStr)) {
+            // immediate notification for excursions happening today
+            notifyNow(ctx, vacationId, excursionTitle != null ? ("Excursion: " + excursionTitle) : "Excursion", "excursion");
+        } else if (whenMillis > todayStartMillis) {
+            // schedule future alarm
+            scheduleAlarm(ctx, vacationId, excursionTitle, "excursion", whenMillis);
+        }
+        // else: date is in the past -> do nothing
+    }
+
     // Parse YYYY-MM-DD (and a few fallbacks). Return millis at local start-of-day or null.
     public static Long parseDateToMillis(String dateStr) {
         if (dateStr == null) return null;

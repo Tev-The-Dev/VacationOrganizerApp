@@ -24,6 +24,10 @@ public class Excursions {
         this.mExcursionDate = excursionDate;
     }
 
+    public Excursions() {
+        
+    }
+
     public Long getId() {
         return mId;
     }
