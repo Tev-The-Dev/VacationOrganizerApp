@@ -1,3 +1,4 @@
+// java
 package com.zybooks.d308vacationplanner;
 
 import android.content.ActivityNotFoundException;
@@ -204,8 +205,9 @@ public class VacationDetailActivity extends AppCompatActivity {
     // Reload mFound from the repository using mId and update UI fields
     private void reloadVacationDetails() {
         mFound = null;
-        if (mId != -1L) {
-            VacationRepository repo = VacationRepository.getInstance(this);
+        VacationRepository repo = VacationRepository.getInstance(this);
+
+        if (mId != -1L && repo != null) {
             List<Vacations> list = repo.getVacations();
             if (list != null) {
                 for (Vacations v : list) {
@@ -227,15 +229,18 @@ public class VacationDetailActivity extends AppCompatActivity {
             if (accomView != null) accomView.setText(safeString(mFound, "getAccommodation", "getAccomodation"));
             if (startView != null) startView.setText(safeString(mFound, "getStartDate", "getStart"));
             if (endView != null) endView.setText(safeString(mFound, "getEndDate", "getEnd"));
+
             // update cached fields
             mTitle = mFound.getTitle();
             mAccommodation = safeString(mFound, "getAccommodation", "getAccomodation");
             mStartDate = safeString(mFound, "getStartDate", "getStart");
             mEndDate = safeString(mFound, "getEndDate", "getEnd");
+
+            // Notification scheduling/instant notify removed from detail screen.
+            // Scheduling and today's notifications are handled by MainActivity / add/edit flows.
         } else {
             // no repository object found; use any saved/intent fields
-            TextView tv = titleView;
-            if (tv != null) tv.setText(mTitle != null ? mTitle : "");
+            if (titleView != null) titleView.setText(mTitle != null ? mTitle : "");
             if (accomView != null) accomView.setText(mAccommodation != null ? mAccommodation : "");
             if (startView != null) startView.setText(mStartDate != null ? mStartDate : "");
             if (endView != null) endView.setText(mEndDate != null ? mEndDate : "");

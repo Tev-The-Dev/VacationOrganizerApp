@@ -11,6 +11,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.D308VacationPlanner">
+        <receiver android:name=".NotificationReceiver"
+            android:exported="false" />
+
         <activity android:name=".EditExcursionActivity"
             android:parentActivityName=".ExcursionListActivity"
             android:exported="true"/>
@@ -51,5 +54,7 @@
             </intent-filter>
         </activity>
     </application>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
 
 </manifest>

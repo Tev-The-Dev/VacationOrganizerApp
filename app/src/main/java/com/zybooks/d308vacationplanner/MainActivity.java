@@ -1,17 +1,22 @@
+// java
 package com.zybooks.d308vacationplanner;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
@@ -21,6 +26,10 @@ public class MainActivity extends AppCompatActivity {
 
     private static final int REQ_ADD = 100;
     private static final int REQ_DELETE = 101;
+    private static final int REQ_NOTIF = 4001;
+
+    // Guard so we only check/ask for notifications once per process launch
+    private static boolean sNotificationsChecked = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,7 +46,38 @@ public class MainActivity extends AppCompatActivity {
         vacationsButton.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, VacationActivity.class)));
 
+        // Run the notification check/request only once per process lifetime
+        if (!sNotificationsChecked) {
+            sNotificationsChecked = true; // ensure it's only attempted once
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                        == PackageManager.PERMISSION_GRANTED) {
+                    NotificationScheduler.checkDatabaseAndNotifyToday(this);
+                } else {
+                    ActivityCompat.requestPermissions(this,
+                            new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                            REQ_NOTIF);
+                }
+            } else {
+                // Pre-Android 13: permissions not required at runtime
+                NotificationScheduler.checkDatabaseAndNotifyToday(this);
+            }
+        }
+
         // Example: if you launch Add/Delete from here, use startActivityForResult(...) with REQ_ADD/REQ_DELETE
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_NOTIF) {
+            boolean granted = grantResults != null && grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                NotificationScheduler.checkDatabaseAndNotifyToday(this);
+            }
+            // do not reset sNotificationsChecked — we only want the prompt/check once per process
+        }
     }
 
     @Override
@@ -56,7 +96,7 @@ public class MainActivity extends AppCompatActivity {
         if (repo == null) return;
         try {
             // prefer direct call if available
-            List<Vacations> items = repo.getVacations();
+            java.util.List<?> items = repo.getVacations();
             // update your adapter here, e.g. mAdapter.setItems(items); mAdapter.notifyDataSetChanged();
         } catch (Exception e) {
             // reflection fallback if repo method signature differs
@@ -65,7 +105,7 @@ public class MainActivity extends AppCompatActivity {
                 Object res = m.invoke(repo);
                 if (res instanceof List) {
                     @SuppressWarnings("unchecked")
-                    List<Vacations> items = (List<Vacations>) res;
+                    List<?> items = (List<?>) res;
                     // update your adapter here
                 }
             } catch (Exception ignored) {}
