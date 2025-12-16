@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -19,6 +20,8 @@ import java.util.List;
 
 public class ExcursionListActivity extends AppCompatActivity {
     private static final String TAG = "ExcursionListActivity";
+    private static final int REQUEST_ADD_EXCURSION = 1001;
+
     private long mVacationId = -1L;
 
     @Override
@@ -62,6 +65,34 @@ public class ExcursionListActivity extends AppCompatActivity {
             }
         } else {
             Log.w(TAG, "LinearLayout with id R.id.vacation_container not found; cannot display excursions.");
+        }
+
+        // Find title view (excursion list title) safely
+        TextView titleView = findViewById(R.id.excursion_title);
+
+        View addVacationButton = findViewById(R.id.add_excursion);
+        if (addVacationButton != null) {
+            addVacationButton.setOnClickListener(v -> {
+                Intent addIntent = new Intent(ExcursionListActivity.this, AddExcursionActivity.class);
+
+                // pass current visible fields so parent can be recreated and still show the same content
+                String titleText = titleView != null ? titleView.getText().toString() : "";
+                addIntent.putExtra("vacation_title", titleText);
+
+                TextView accomView = findViewById(R.id.detail_accommodation);
+                TextView startView = findViewById(R.id.detail_start_date);
+                TextView endView = findViewById(R.id.detail_end_date);
+                addIntent.putExtra("vacation_accommodation", accomView != null ? accomView.getText().toString() : "");
+                addIntent.putExtra("vacation_start_date", startView != null ? startView.getText().toString() : "");
+                addIntent.putExtra("vacation_end_date", endView != null ? endView.getText().toString() : "");
+
+                long vacationIdToSend = mVacationId;
+                addIntent.putExtra("vacation_id", vacationIdToSend);
+
+                startActivityForResult(addIntent, REQUEST_ADD_EXCURSION);
+            });
+        } else {
+            Log.w(TAG, "Add excursion button (R.id.add_excursion) not found.");
         }
     }
 

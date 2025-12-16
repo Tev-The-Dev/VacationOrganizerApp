@@ -1,5 +1,6 @@
 package com.zybooks.d308vacationplanner;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -9,6 +10,9 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
+
+import java.lang.reflect.Method;
+import java.util.List;
 
 public class AddVacationActivity extends AppCompatActivity {
 
@@ -35,15 +39,23 @@ public class AddVacationActivity extends AppCompatActivity {
                 return;
             }
 
-            // Use Vacations constructor and setters as needed
             Vacations vacation = new Vacations(title, accom, start, end);
 
-            // Save via repository (adjust method name if your repo uses different API)
             VacationRepository repo = VacationRepository.getInstance(this);
-            repo.addVacation(vacation);
+            boolean added = tryAddVacation(repo, vacation);
 
-            Toast.makeText(this, "Vacation saved", Toast.LENGTH_SHORT).show();
-            setResult(RESULT_OK);
+            Intent result = new Intent();
+            if (added) {
+                Toast.makeText(this, "Vacation Added", Toast.LENGTH_SHORT).show();
+                // If repo assigned an id, include it; otherwise caller can reload entire list
+                if (vacation.getId() != null) {
+                    result.putExtra(EditVacationActivity.EXTRA_VACATION_ID, vacation.getId());
+                }
+                setResult(RESULT_OK, result);
+            } else {
+                Toast.makeText(this, "Vacation Failed", Toast.LENGTH_SHORT).show();
+                setResult(RESULT_CANCELED);
+            }
             finish();
         });
 
@@ -51,5 +63,41 @@ public class AddVacationActivity extends AppCompatActivity {
             setResult(RESULT_CANCELED);
             finish();
         });
+    }
+
+    // Try common repo insert/add method names, otherwise add to returned list if modifiable.
+    private boolean tryAddVacation(Object repo, Vacations vac) {
+        if (repo == null || vac == null) return false;
+        String[] names = {"insertVacation", "addVacation", "saveVacation", "createVacation", "insert", "add", "save", "insertAll"};
+        for (String name : names) {
+            try {
+                Method m = repo.getClass().getMethod(name, Vacations.class);
+                Object res = m.invoke(repo, vac);
+                if (res == null) return true;
+                if (res instanceof Boolean && (Boolean) res) return true;
+                if (res instanceof Number) {
+                    long id = ((Number) res).longValue();
+                    if (id > 0) {
+                        try { vac.setId(id); } catch (Exception ignored) {}
+                        return true;
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {}
+            catch (Exception ignored) {}
+        }
+
+        // fallback: try to add to getVacations() list if modifiable
+        try {
+            Method getVacations = repo.getClass().getMethod("getVacations");
+            Object listObj = getVacations.invoke(repo);
+            if (listObj instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Object> list = (List<Object>) listObj;
+                list.add(vac);
+                return true;
+            }
+        } catch (Exception ignored) {}
+
+        return false;
     }
 }

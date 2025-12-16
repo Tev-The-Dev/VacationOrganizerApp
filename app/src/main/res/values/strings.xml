@@ -11,5 +11,10 @@
     <string name="btn_view_vacations">View Vacations"</string>
     <string name="btn_add_vacation">Add Vacation"</string>
     <string name="vacation_detail_title">Vacation Detail</string>
+    <string name="delete_vacation_button">Delete Vacation</string>
+    <string name="edit_vacation_button">Edit Vacation</string>
+    <string name="delete_excursion_button">Delete Excursion</string>
+    <string name="edit_excursion_button">Edit Excursion"</string>
+
 
 </resources>

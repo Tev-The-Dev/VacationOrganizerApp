@@ -3,12 +3,10 @@ package com.zybooks.d308vacationplanner;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.MenuItem;
-import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
-
 import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
@@ -17,6 +15,9 @@ import java.util.List;
 
 public class VacationDetailActivity extends AppCompatActivity {
     private static final int REQUEST_ADD_EXCURSION = 1001;
+    private static final int REQUEST_EDIT_VACATION = 2001;
+    private static final int REQUEST_DELETE_VACATION = 3001;
+
     private static final String KEY_VACATION_ID = "key_vacation_id";
     private static final String KEY_VACATION_TITLE = "key_vacation_title";
     private static final String KEY_VACATION_ACCOM = "key_vacation_accom";
@@ -60,44 +61,46 @@ public class VacationDetailActivity extends AppCompatActivity {
         TextView titleView = findViewById(R.id.detail_title);
 
         Button viewExcursionsBtn = findViewById(R.id.btn_view_excursions);
-        viewExcursionsBtn.setOnClickListener(v -> {
-            Intent intent = new Intent(VacationDetailActivity.this, ExcursionListActivity.class);
-            intent.putExtra("vacation_title", titleView.getText().toString());
+        if (viewExcursionsBtn != null) {
+            viewExcursionsBtn.setOnClickListener(view -> {
+                Intent intent = new Intent(VacationDetailActivity.this, ExcursionListActivity.class);
+                String titleText = (titleView != null && titleView.getText() != null) ? titleView.getText().toString() : "";
+                intent.putExtra("vacation_title", titleText);
 
-            long vacationIdToSend = -1L;
-            if (mFound != null && mFound.getId() != null) {
-                vacationIdToSend = mFound.getId();
-            } else if (mId != -1L) {
-                vacationIdToSend = mId;
-            }
-            intent.putExtra("vacation_id", vacationIdToSend);
+                long vacationIdToSend = -1L;
+                if (mFound != null && mFound.getId() != null) {
+                    vacationIdToSend = mFound.getId();
+                } else if (mId != -1L) {
+                    vacationIdToSend = mId;
+                }
+                intent.putExtra("vacation_id", vacationIdToSend);
 
-            startActivity(intent);
-        });
+                startActivity(intent);
+            });
+        }
 
-        View addVacationButton = findViewById(R.id.btn_add_excursion);
-        addVacationButton.setOnClickListener(v -> {
-            Intent intent = new Intent(VacationDetailActivity.this, AddExcursionActivity.class);
-            // pass current visible fields so parent can be recreated and still show the same content
-            intent.putExtra("vacation_title", titleView.getText().toString());
+        Button editVacationBtn = findViewById(R.id.edit_vacation_button);
+        if (editVacationBtn != null) {
+            editVacationBtn.setOnClickListener(view -> {
+                Intent intent = new Intent(VacationDetailActivity.this, EditVacationActivity.class);
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_ID, mId);
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_TITLE, mTitle != null ? mTitle : "");
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_ACCOM, mAccommodation != null ? mAccommodation : "");
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_START, mStartDate != null ? mStartDate : "");
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_END, mEndDate != null ? mEndDate : "");
+                startActivityForResult(intent, REQUEST_EDIT_VACATION);
+            });
+        }
 
-            TextView accomView = findViewById(R.id.detail_accommodation);
-            TextView startView = findViewById(R.id.detail_start_date);
-            TextView endView = findViewById(R.id.detail_end_date);
-            intent.putExtra("vacation_accommodation", accomView != null ? accomView.getText().toString() : "");
-            intent.putExtra("vacation_start_date", startView != null ? startView.getText().toString() : "");
-            intent.putExtra("vacation_end_date", endView != null ? endView.getText().toString() : "");
-
-            long vacationIdToSend = -1L;
-            if (mFound != null && mFound.getId() != null) {
-                vacationIdToSend = mFound.getId();
-            } else if (mId != -1L) {
-                vacationIdToSend = mId;
-            }
-            intent.putExtra("vacation_id", vacationIdToSend);
-
-            startActivityForResult(intent, REQUEST_ADD_EXCURSION);
-        });
+        // Launch DeleteVacationActivity for delete flow (moved logic to separate activity)
+        Button deleteVacationBtn = findViewById(R.id.delete_vacation_button);
+        if (deleteVacationBtn != null) {
+            deleteVacationBtn.setOnClickListener(view -> {
+                Intent intent = new Intent(VacationDetailActivity.this, DeleteVacationActivity.class);
+                intent.putExtra(EditVacationActivity.EXTRA_VACATION_ID, mId);
+                startActivityForResult(intent, REQUEST_DELETE_VACATION);
+            });
+        }
     }
 
     @Override
@@ -113,13 +116,44 @@ public class VacationDetailActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
         if (requestCode == REQUEST_ADD_EXCURSION && resultCode == RESULT_OK) {
             // An excursion was added; reload the vacation details and UI
             reloadVacationDetails();
         } else if (requestCode == REQUEST_ADD_EXCURSION) {
             // If child returned CANCEL, still reload from repository (or keep existing values).
-            // reloadVacationDetails() will prefer repo data and fall back to saved/title fields.
             reloadVacationDetails();
+        } else if (requestCode == REQUEST_EDIT_VACATION) {
+            if (resultCode == RESULT_OK && data != null) {
+                mId = data.getLongExtra(EditVacationActivity.EXTRA_VACATION_ID, mId);
+                mTitle = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_TITLE);
+                mAccommodation = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_ACCOM);
+                mStartDate = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_START);
+                mEndDate = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_END);
+                // propagate EDIT success to parent so VacationActivity can refresh
+                setResult(RESULT_OK, data);
+                reloadVacationDetails();
+            } else if (resultCode == RESULT_FIRST_USER && data != null && data.getBooleanExtra(EditVacationActivity.EXTRA_VACATION_DELETE, false)) {
+                // edited screen signaled delete -> finish and notify parent
+                Intent result = new Intent();
+                result.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
+                setResult(RESULT_OK, result);
+                finish();
+            } else {
+                reloadVacationDetails();
+            }
+        } else if (requestCode == REQUEST_DELETE_VACATION) {
+            // Accept RESULT_OK (DeleteVacationActivity uses RESULT_OK on success).
+            if ((resultCode == RESULT_OK || resultCode == RESULT_FIRST_USER) && data != null && data.getBooleanExtra(EditVacationActivity.EXTRA_VACATION_DELETE, false)) {
+                // Deleted successfully - propagate RESULT_OK to parent VacationActivity and finish this detail screen
+                Intent result = new Intent();
+                result.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
+                setResult(RESULT_OK, result);
+                finish();
+            } else {
+                // not deleted or cancelled -> refresh UI
+                reloadVacationDetails();
+            }
         }
     }
 
@@ -155,10 +189,10 @@ public class VacationDetailActivity extends AppCompatActivity {
         TextView endView = findViewById(R.id.detail_end_date);
 
         if (mFound != null) {
-            titleView.setText(safeString(mFound, "getTitle"));
-            accomView.setText(safeString(mFound, "getAccommodation", "getAccomodation"));
-            startView.setText(safeString(mFound, "getStartDate", "getStart"));
-            endView.setText(safeString(mFound, "getEndDate", "getEnd"));
+            if (titleView != null) titleView.setText(safeString(mFound, "getTitle"));
+            if (accomView != null) accomView.setText(safeString(mFound, "getAccommodation", "getAccomodation"));
+            if (startView != null) startView.setText(safeString(mFound, "getStartDate", "getStart"));
+            if (endView != null) endView.setText(safeString(mFound, "getEndDate", "getEnd"));
             // update cached fields
             mTitle = mFound.getTitle();
             mAccommodation = safeString(mFound, "getAccommodation", "getAccomodation");
@@ -166,14 +200,11 @@ public class VacationDetailActivity extends AppCompatActivity {
             mEndDate = safeString(mFound, "getEndDate", "getEnd");
         } else {
             // no repository object found; use any saved/intent fields
-            if (mTitle != null) {
-                titleView.setText(mTitle);
-            } else {
-                titleView.setText("");
-            }
-            accomView.setText(mAccommodation != null ? mAccommodation : "");
-            startView.setText(mStartDate != null ? mStartDate : "");
-            endView.setText(mEndDate != null ? mEndDate : "");
+            TextView tv = titleView;
+            if (tv != null) tv.setText(mTitle != null ? mTitle : "");
+            if (accomView != null) accomView.setText(mAccommodation != null ? mAccommodation : "");
+            if (startView != null) startView.setText(mStartDate != null ? mStartDate : "");
+            if (endView != null) endView.setText(mEndDate != null ? mEndDate : "");
         }
     }
 
