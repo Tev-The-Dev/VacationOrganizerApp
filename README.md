@@ -8,21 +8,20 @@ FOR SPECIFIC TASK INSTRUCTIONS AND REQUIREMENTS FOR THIS ASSESSMENT, PLEASE REFE
 ## BASIC INSTRUCTIONS
 For this assessment, you have an opportunity to test your competency as a mobile application developer. Your understanding of mobile application structure and design will help you to develop applications to meet customer requirements. This task will allow you to demonstrate your ability to apply the skills learned in the course.
 
-## SUPPLEMENTAL RESOURCES 
-1.	How to clone a project to Android Studio using Git?
+## APP USAGE
+* App Title: D308 Vacation Reservation
+* Purpose: The purpose of this application is to allow user to create a vacation reservation list that will notify them of their reservations and all of the excursions that they have planned for that day. 
 
-> Ensure that Android Studio and Git are installed on your system.  New Project, Get from VCS button or the File/New/Project from Version Control. This will open a window  with a prompt to clone the project. Save it in a safe location for the directory and press clone. IntelliJ will prompt you for your credentials. Enter in your WGU Credentials and the project will be cloned onto your local machine.
 
-2. How to create a branch and start Development?
+## OPERATION GUIDE
+Once the application launches, you will be greeted by a homescreen. Here you are able to view the list of vacations that you have already created. Click/tap the "View Vacaitons" button. This will take you to the Vacation List screen.
+On the Vacation List page, each vacation is a button to click. At the bottom, there is an "Add Vacation button". Click/Tap the "Add Vacation".
+This page will allow you add a new vacation. The dates are validated to not allow the user to enter a date that is not today or greater. Once you confirm your entry, tap "Save" button and it will return you to the Vacation List page.
+On the Vacation List page, tap on one of the vacations. It will take you to the Vacation Detail page. Here you will see the Title, Accommodation, Start Date and End Date for the vacation you selected. Above this you will see a "Delete Vacation" button and an "Edit Vacation" button.
+If the vacation has any excursions associated with it, the vacation will not be deleted. Tappgin the "Edit Vacation" button will allow you to edit the current vacations details. Tapping save willl save it back to the repository and return you to the Vacation Detail screen with the updated information.
+At the bottom of the page is the "Associated Excursions" button. Tapping on this button opens the Excursion List page with the associated excursions to this vacation. Similar to the Vacation List page, each excursion is a button. There is also an "Add Excursion" button at the bottom that will allow you to add a new excursion by Title and Date. The date must be between the vacation start date and end date.
+Saving will return you to the Excursion List page. Tapping on an excursion will take you to the Excursion Detail page. This shows the excursions title and date.
 
-- GitLab method
-> Press the '+' button located near your branch name. In the dropdown list, press the 'New branch' button. This will allow you to create a name for your branch. Once the branch has been named, you can select 'Create Branch' to push the branch to your repository.
-
-- Android Studio method
-> In Android Studio, Go to the 'Git' button on the top toolbar. Select the new branch option and create a name for the branch. Make sure checkout branch is selected and press create. You can now add a commit message and push the new branch to the local repo.
-
-## SUPPORT
-If you need additional support, please navigate to the course page and reach out to your course instructor.
-## FUTURE USE
-Take this opportunity to create or add to a simple resume portfolio to highlight and showcase your work for future use in career search, experience, and education!
-
+* If you tap the "Up" or "Back" button at anytime, it will return you to the previous, parent, screen.
+* Gitlab: https://gitlab.com/wgu-gitlab-environment/student-repos/tpay177/d308-mobile-application-development-android/-/tree/Working_Branch?ref_type=heads
+* Android Version: 16.0 "Baklava" | release 36
