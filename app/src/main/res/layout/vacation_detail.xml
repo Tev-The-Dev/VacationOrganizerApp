@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-    <!-- res/layout/vacation_detail.xml -->
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="16dp">
 
-    <!-- Action buttons (Edit / Delete) placed above the content -->
+    <!-- action buttons -->
     <LinearLayout
         android:id="@+id/action_buttons"
         android:layout_width="0dp"
@@ -99,6 +98,16 @@
                 android:layout_height="wrap_content"
                 android:textSize="16sp"
                 android:layout_marginBottom="12dp" />
+
+            <androidx.appcompat.widget.SwitchCompat
+                android:id="@+id/switch_notifications"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Notify me"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp"
+                android:checked="false"
+                android:contentDescription="Enable vacation start notification" />
 
         </LinearLayout>
     </ScrollView>

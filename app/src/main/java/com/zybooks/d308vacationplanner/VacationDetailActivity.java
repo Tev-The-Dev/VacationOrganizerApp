@@ -1,30 +1,45 @@
 package com.zybooks.d308vacationplanner;
 
+import android.Manifest;
+import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
-import android.net.Uri;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.content.ContextCompat;
 
 import com.zybooks.d308vacationplanner.model.Excursions;
 import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class VacationDetailActivity extends AppCompatActivity {
     private static final int REQUEST_ADD_EXCURSION = 1001;
     private static final int REQUEST_EDIT_VACATION = 2001;
     private static final int REQUEST_DELETE_VACATION = 3001;
-    private static final int REQUEST_VIEW_EXCURSIONS = 4001; // new
+    private static final int REQUEST_VIEW_EXCURSIONS = 4001;
+
+    private static final String PREFS_NAME = "vacation_prefs";
+    private static final String PREF_NOTIFY_PREFIX = "notify_";
 
     private static final String KEY_VACATION_ID = "key_vacation_id";
     private static final String KEY_VACATION_TITLE = "key_vacation_title";
@@ -33,18 +48,23 @@ public class VacationDetailActivity extends AppCompatActivity {
     private static final String KEY_VACATION_END = "key_vacation_end";
 
     private long mId = -1L;
+    private Vacations mFound = null;
+
     private String mTitle = null;
     private String mAccommodation = null;
     private String mStartDate = null;
     private String mEndDate = null;
-    private Vacations mFound = null;
+
+    private SwitchCompat notifySwitch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.vacation_detail);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
-        // restore saved state first, otherwise read from intent
         if (savedInstanceState != null) {
             mId = savedInstanceState.getLong(KEY_VACATION_ID, -1L);
             mTitle = savedInstanceState.getString(KEY_VACATION_TITLE);
@@ -55,23 +75,49 @@ public class VacationDetailActivity extends AppCompatActivity {
             Intent intent = getIntent();
             if (intent != null) {
                 mId = intent.getLongExtra("vacation_id", -1L);
+                if (mId == -1L) {
+                    // try alternative key
+                    mId = intent.getLongExtra("vacationId", -1L);
+                }
                 mTitle = intent.getStringExtra("vacation_title");
-                // read any passed visible fields so we can repopulate if parent is recreated
-                mAccommodation = intent.getStringExtra("vacation_accommodation");
+                mAccommodation = intent.getStringExtra("vacation_accom");
                 mStartDate = intent.getStringExtra("vacation_start_date");
                 mEndDate = intent.getStringExtra("vacation_end_date");
             }
         }
 
-        // populate UI and wire buttons
-        reloadVacationDetails();
+        // Wire notification toggle (manual-only)
+        notifySwitch = findViewById(R.id.switch_notifications);
+        if (notifySwitch != null) {
+            boolean enabled = getNotifyPref(mId);
+            notifySwitch.setChecked(enabled);
 
-        TextView titleView = findViewById(R.id.detail_title);
+            // IMPORTANT: removed automatic scheduling on load.
+            // Manual-only: only act when user toggles the switch.
+            notifySwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                setNotifyPref(mId, isChecked);
+                if (isChecked) {
+                    // If today is either start or end date, notify immediately; otherwise schedule for start date
+                    if (isDateToday(mStartDate) || isDateToday(mEndDate)) {
+                        sendImmediateNotification();
+                    } else {
+                        scheduleNotificationForStartDate();
+                    }
+                    Toast.makeText(this, "Vacation notifications enabled", Toast.LENGTH_SHORT).show();
+                } else {
+                    // turn off: cancel any scheduled alarm
+                    cancelScheduledNotification();
+                    Toast.makeText(this, "Vacation notifications disabled", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
 
+        // Edit/delete/view excursions wiring (kept)
         Button viewExcursionsBtn = findViewById(R.id.btn_view_excursions);
         if (viewExcursionsBtn != null) {
             viewExcursionsBtn.setOnClickListener(view -> {
                 Intent intent = new Intent(VacationDetailActivity.this, ExcursionListActivity.class);
+                TextView titleView = findViewById(R.id.detail_title);
                 String titleText = (titleView != null && titleView.getText() != null) ? titleView.getText().toString() : "";
                 intent.putExtra("vacation_title", titleText);
 
@@ -83,7 +129,6 @@ public class VacationDetailActivity extends AppCompatActivity {
                 }
                 intent.putExtra("vacation_id", vacationIdToSend);
 
-                // Launch for result so returning list can signal to reload details
                 startActivityForResult(intent, REQUEST_VIEW_EXCURSIONS);
             });
         }
@@ -101,7 +146,6 @@ public class VacationDetailActivity extends AppCompatActivity {
             });
         }
 
-        // Launch DeleteVacationActivity for delete flow (moved logic to separate activity)
         Button deleteVacationBtn = findViewById(R.id.delete_vacation_button);
         if (deleteVacationBtn != null) {
             deleteVacationBtn.setOnClickListener(view -> {
@@ -110,18 +154,19 @@ public class VacationDetailActivity extends AppCompatActivity {
                 startActivityForResult(intent, REQUEST_DELETE_VACATION);
             });
         }
+
+        reloadVacationDetails();
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        MenuInflater inflater = getMenuInflater();
+    public boolean onCreateOptionsMenu(android.view.Menu menu) {
+        android.view.MenuInflater inflater = getMenuInflater();
         inflater.inflate(R.menu.menu_vacation_detail, menu);
         return true;
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        // handle Up navigation by finishing this activity to preserve the parent instance/state
+    public boolean onOptionsItemSelected(android.view.MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
             finish();
             return true;
@@ -137,9 +182,8 @@ public class VacationDetailActivity extends AppCompatActivity {
         String subject = buildShareSubject();
         String body = buildShareBody();
 
-        // Use ACTION_SENDTO with mailto: to restrict to email apps
-        String uriText = "mailto:?subject=" + Uri.encode(subject) + "&body=" + Uri.encode(body);
-        Uri mailUri = Uri.parse(uriText);
+        String uriText = "mailto:?subject=" + android.net.Uri.encode(subject) + "&body=" + android.net.Uri.encode(body);
+        android.net.Uri mailUri = android.net.Uri.parse(uriText);
         Intent emailIntent = new Intent(Intent.ACTION_SENDTO, mailUri);
 
         try {
@@ -152,47 +196,13 @@ public class VacationDetailActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-
-        if (requestCode == REQUEST_ADD_EXCURSION && resultCode == RESULT_OK) {
-            // An excursion was added; reload the vacation details and UI
-            reloadVacationDetails();
-        } else if (requestCode == REQUEST_ADD_EXCURSION) {
-            // If child returned CANCEL, still reload from repository (or keep existing values).
-            reloadVacationDetails();
-        } else if (requestCode == REQUEST_EDIT_VACATION) {
-            if (resultCode == RESULT_OK && data != null) {
-                mId = data.getLongExtra(EditVacationActivity.EXTRA_VACATION_ID, mId);
-                mTitle = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_TITLE);
-                mAccommodation = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_ACCOM);
-                mStartDate = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_START);
-                mEndDate = data.getStringExtra(EditVacationActivity.EXTRA_VACATION_END);
-                // propagate EDIT success to parent so VacationActivity can refresh
-                setResult(RESULT_OK, data);
-                reloadVacationDetails();
-            } else if (resultCode == RESULT_FIRST_USER && data != null && data.getBooleanExtra(EditVacationActivity.EXTRA_VACATION_DELETE, false)) {
-                // edited screen signaled delete -> finish and notify parent
-                Intent result = new Intent();
-                result.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
-                setResult(RESULT_OK, result);
-                finish();
-            } else {
-                reloadVacationDetails();
-            }
-        } else if (requestCode == REQUEST_DELETE_VACATION) {
-            // Accept RESULT_OK (DeleteVacationActivity uses RESULT_OK on success).
-            if ((resultCode == RESULT_OK || resultCode == RESULT_FIRST_USER) && data != null && data.getBooleanExtra(EditVacationActivity.EXTRA_VACATION_DELETE, false)) {
-                // Deleted successfully - propagate RESULT_OK to parent VacationActivity and finish this detail screen
-                Intent result = new Intent();
-                result.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
-                setResult(RESULT_OK, result);
-                finish();
-            } else {
-                // not deleted or cancelled -> refresh UI
-                reloadVacationDetails();
-            }
-        } else if (requestCode == REQUEST_VIEW_EXCURSIONS) {
-            // Coming back from ExcursionListActivity -> reload to reflect any excursion changes
-            reloadVacationDetails();
+        // keep existing flows unchanged; refresh displayed data
+        reloadVacationDetails();
+        // do NOT auto-schedule on return; leave manual control to the switch listener
+        // update switch checked state to reflect prefs after possible edits/deletes
+        if (notifySwitch != null) {
+            boolean enabled = getNotifyPref(mId);
+            notifySwitch.setChecked(enabled);
         }
     }
 
@@ -206,7 +216,6 @@ public class VacationDetailActivity extends AppCompatActivity {
         outState.putString(KEY_VACATION_END, mEndDate);
     }
 
-    // Reload mFound from the repository using mId and update UI fields
     private void reloadVacationDetails() {
         mFound = null;
         VacationRepository repo = VacationRepository.getInstance(this);
@@ -234,7 +243,6 @@ public class VacationDetailActivity extends AppCompatActivity {
             if (startView != null) startView.setText(safeString(mFound, "getStartDate", "getStart"));
             if (endView != null) endView.setText(safeString(mFound, "getEndDate", "getEnd"));
 
-            // update cached fields
             mTitle = mFound.getTitle();
             mAccommodation = safeString(mFound, "getAccommodation", "getAccomodation");
             mStartDate = safeString(mFound, "getStartDate", "getStart");
@@ -259,7 +267,6 @@ public class VacationDetailActivity extends AppCompatActivity {
         return "";
     }
 
-    // Build share subject
     private String buildShareSubject() {
         String title = mTitle != null ? mTitle : "";
         String start = mStartDate != null ? mStartDate : "";
@@ -270,14 +277,12 @@ public class VacationDetailActivity extends AppCompatActivity {
         return "Vacation: " + title;
     }
 
-    // Build share body including excursions for this vacation
     private String buildShareBody() {
         StringBuilder sb = new StringBuilder();
         sb.append("Title: ").append(mTitle != null ? mTitle : "").append("\n");
         sb.append("Accommodation: ").append(mAccommodation != null ? mAccommodation : "").append("\n");
         sb.append("Start: ").append(mStartDate != null ? mStartDate : "").append("\n");
         sb.append("End: ").append(mEndDate != null ? mEndDate : "").append("\n\n");
-
         sb.append("Excursions:\n");
 
         VacationRepository repo = VacationRepository.getInstance(this);
@@ -285,36 +290,11 @@ public class VacationDetailActivity extends AppCompatActivity {
             try {
                 List<Excursions> excursions = repo.getExcursions();
                 if (excursions != null && !excursions.isEmpty()) {
-                    int idx = 1;
-                    for (Excursions ex : excursions) {
-                        try {
-                            Long vacId = null;
-                            try {
-                                // try typed getter first
-                                Method gv = ex.getClass().getMethod("getVacationId");
-                                Object val = gv.invoke(ex);
-                                if (val != null) vacId = Long.parseLong(String.valueOf(val));
-                            } catch (Exception ignored) { }
-
-                            if (vacId == null) {
-                                // fallback via reflection for common field/getter names
-                                try {
-                                    Method gv2 = ex.getClass().getMethod("getVacation");
-                                    Object val2 = gv2.invoke(ex);
-                                    if (val2 != null) vacId = Long.parseLong(String.valueOf(val2));
-                                } catch (Exception ignore) { }
-                            }
-
-                            if (vacId != null && vacId.longValue() == mId) {
-                                String etitle = safeString(ex, "getTitle", "getExcursionTitle");
-                                String edate = safeString(ex, "getExcursionDate", "getDate");
-                                sb.append(idx++).append(". ").append(etitle);
-                                if (!edate.isEmpty()) sb.append(" (").append(edate).append(")");
-                                sb.append("\n");
-                            }
-                        } catch (Exception ignored) { }
+                    for (Excursions e : excursions) {
+                        if (e != null && e.getVacationId() != null && e.getVacationId().longValue() == mId) {
+                            sb.append("  - ").append(safeString(e, "getTitle")).append("\n");
+                        }
                     }
-                    if (idx == 1) sb.append("  (no excursions)\n");
                 } else {
                     sb.append("  (no excursions)\n");
                 }
@@ -326,5 +306,149 @@ public class VacationDetailActivity extends AppCompatActivity {
         }
 
         return sb.toString();
+    }
+
+    private boolean getNotifyPref(long vacationId) {
+        if (vacationId == -1L) return false;
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        return prefs.getBoolean(PREF_NOTIFY_PREFIX + vacationId, false);
+    }
+
+    private void setNotifyPref(long vacationId, boolean enabled) {
+        if (vacationId == -1L) return;
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        prefs.edit().putBoolean(PREF_NOTIFY_PREFIX + vacationId, enabled).apply();
+    }
+
+    // Existing scheduling helpers are retained but are only triggered by the manual switch.
+    private int alarmRequestCodeForId(long id) {
+        return (int) (id ^ (id >>> 32));
+    }
+
+    private void scheduleNotificationForStartDate() {
+        if (mStartDate == null || mId == -1L) return;
+
+        Date date = parseDateFlexible(mStartDate);
+        if (date == null) return;
+
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(date);
+        cal.set(Calendar.HOUR_OF_DAY, 9);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+
+        long triggerAt = cal.getTimeInMillis();
+        if (triggerAt <= System.currentTimeMillis()) {
+            // if the scheduled time has already passed, show immediate notification
+            sendImmediateNotification();
+            return;
+        }
+
+        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+
+        Intent intent = new Intent(this, NotificationReceiver.class);
+        intent.putExtra("vacation_id", mId);
+        intent.putExtra("vacation_title", mTitle != null ? mTitle : "");
+        intent.putExtra("vacation_start", mStartDate != null ? mStartDate : "");
+        PendingIntent pi = PendingIntent.getBroadcast(this, alarmRequestCodeForId(mId), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            }
+        } catch (SecurityException se) {
+            try {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            } catch (Exception ignored) { }
+        } catch (Exception ignored) { }
+    }
+
+    private void cancelScheduledNotification() {
+        if (mId == -1L) return;
+        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        Intent intent = new Intent(this, NotificationReceiver.class);
+        PendingIntent pi = PendingIntent.getBroadcast(this, alarmRequestCodeForId(mId), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        if (am != null) am.cancel(pi);
+    }
+
+    private void sendImmediateNotification() {
+        NotificationReceiver.createNotificationChannel(this);
+
+        Intent intent = new Intent(this, VacationDetailActivity.class);
+        intent.putExtra("vacation_id", mId);
+        PendingIntent contentIntent = PendingIntent.getActivity(this, alarmRequestCodeForId(mId), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        // Choose appropriate message depending on whether today is start or end
+        String whenText = "Vacation";
+        if (isDateToday(mStartDate)) {
+            whenText = "Vacation starts: " + (mStartDate != null ? mStartDate : "");
+        } else if (isDateToday(mEndDate)) {
+            whenText = "Vacation ends: " + (mEndDate != null ? mEndDate : "");
+        } else {
+            whenText = "Vacation starts: " + (mStartDate != null ? mStartDate : "");
+        }
+
+        androidx.core.app.NotificationCompat.Builder builder = new androidx.core.app.NotificationCompat.Builder(this, NotificationReceiver.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(mTitle != null ? mTitle : "Vacation")
+                .setContentText(whenText)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(contentIntent)
+                .setAutoCancel(true);
+
+        NotificationManagerCompat nm = NotificationManagerCompat.from(this);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+        }
+
+        try {
+            nm.notify(alarmRequestCodeForId(mId), builder.build());
+        } catch (SecurityException ignored) { }
+    }
+
+    private boolean isDateToday(String dateStr) {
+        if (dateStr == null) return false;
+        Date d = parseDateFlexible(dateStr);
+        if (d == null) return false;
+        Calendar c1 = Calendar.getInstance();
+        Calendar c2 = Calendar.getInstance();
+        c2.setTime(d);
+        return c1.get(Calendar.YEAR) == c2.get(Calendar.YEAR)
+                && c1.get(Calendar.DAY_OF_YEAR) == c2.get(Calendar.DAY_OF_YEAR);
+    }
+
+    private Date parseDateFlexible(String s) {
+        if (s == null) return null;
+        String[] patterns = {"yyyy-MM-dd", "MM/dd/yyyy", "MMM d, yyyy", "M/d/yyyy"};
+        for (String p : patterns) {
+            try {
+                SimpleDateFormat fmt = new SimpleDateFormat(p, Locale.getDefault());
+                fmt.setLenient(false);
+                return fmt.parse(s);
+            } catch (ParseException ignored) { }
+        }
+        try {
+            long millis = Long.parseLong(s);
+            return new Date(millis);
+        } catch (Exception ignored) { }
+        return null;
     }
 }

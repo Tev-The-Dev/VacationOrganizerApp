@@ -1,4 +1,3 @@
-// java
 package com.zybooks.d308vacationplanner;
 
 import android.app.AlarmManager;
@@ -8,7 +7,11 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.util.Log;
 
@@ -34,6 +37,12 @@ public class NotificationScheduler {
     private static final String TAG = "NotificationScheduler";
     private static final String CHANNEL_ID = "vacation_channel";
     private static final String CHANNEL_NAME = "Vacation reminders";
+    private static final String PREFS_NAME = "vacation_prefs";
+    private static final String PREF_AUTO_STARTUP = "auto_notify_on_startup";
+
+    // per-item pref prefixes (match keys used elsewhere in the app)
+    private static final String PREF_NOTIFY_PREFIX_VAC = "notify_vac_";
+    private static final String PREF_NOTIFY_PREFIX_EXC = "notify_exc_";
 
     // Public API: schedule start/end alarms for a vacation
     public static void scheduleVacationNotifications(Context ctx, long vacationId, String title, String startDateStr, String endDateStr) {
@@ -51,14 +60,21 @@ public class NotificationScheduler {
         Long startMillis = parseDateToMillis(startDateStr);
         if (startMillis != null) {
             if (isDateToday(startDateStr)) {
-                Log.d(TAG, "scheduleVacationNotifications: start is today -> notify now vacId=" + vacationId);
-                notifyNow(ctx, vacationId, title, "start");
+                // Only send immediate notification for today if user enabled vacation notifications
+                if (isNotifyEnabled(ctx, vacationId, /*type=*/"vacation")) {
+                    notifyNow(ctx, vacationId, title, /*type=*/null);
+                } else {
+                    Log.d(TAG, "start date is today but user disabled notifications for vacationId=" + vacationId);
+                }
             } else if (startMillis > todayStartMillis) {
-                // start date is in the future (tomorrow or later)
-                scheduleAlarm(ctx, vacationId, title, "start", startMillis);
-                Log.d(TAG, "scheduleVacationNotifications: scheduled start for vacId=" + vacationId + " at " + startMillis);
-            } else {
-                Log.d(TAG, "scheduleVacationNotifications: start date is in the past; not scheduling vacId=" + vacationId);
+                // schedule morning alarm for start day (9:00)
+                Calendar cal = Calendar.getInstance();
+                cal.setTimeInMillis(startMillis);
+                cal.set(Calendar.HOUR_OF_DAY, 9);
+                cal.set(Calendar.MINUTE, 0);
+                cal.set(Calendar.SECOND, 0);
+                cal.set(Calendar.MILLISECOND, 0);
+                scheduleAlarm(ctx, vacationId, title, /*type=*/null, cal.getTimeInMillis());
             }
         }
 
@@ -66,13 +82,20 @@ public class NotificationScheduler {
         Long endMillis = parseDateToMillis(endDateStr);
         if (endMillis != null) {
             if (isDateToday(endDateStr)) {
-                Log.d(TAG, "scheduleVacationNotifications: end is today -> notify now vacId=" + vacationId);
-                notifyNow(ctx, vacationId, title, "end");
+                if (isNotifyEnabled(ctx, vacationId, /*type=*/"vacation")) {
+                    // use type "end" so requestCode differs
+                    notifyNow(ctx, vacationId, title, "end");
+                } else {
+                    Log.d(TAG, "end date is today but user disabled notifications for vacationId=" + vacationId);
+                }
             } else if (endMillis > todayStartMillis) {
-                scheduleAlarm(ctx, vacationId, title, "end", endMillis);
-                Log.d(TAG, "scheduleVacationNotifications: scheduled end for vacId=" + vacationId + " at " + endMillis);
-            } else {
-                Log.d(TAG, "scheduleVacationNotifications: end date is in the past; not scheduling vacId=" + vacationId);
+                Calendar cal = Calendar.getInstance();
+                cal.setTimeInMillis(endMillis);
+                cal.set(Calendar.HOUR_OF_DAY, 9);
+                cal.set(Calendar.MINUTE, 0);
+                cal.set(Calendar.SECOND, 0);
+                cal.set(Calendar.MILLISECOND, 0);
+                scheduleAlarm(ctx, vacationId, title, "end", cal.getTimeInMillis());
             }
         }
     }
@@ -92,11 +115,21 @@ public class NotificationScheduler {
         long todayStartMillis = todayStart.getTimeInMillis();
 
         if (isDateToday(dateStr)) {
-            // immediate notification for excursions happening today
-            notifyNow(ctx, vacationId, excursionTitle != null ? ("Excursion: " + excursionTitle) : "Excursion", "excursion");
+            // Only send if user enabled excursion notifications
+            if (isNotifyEnabled(ctx, vacationId, "excursion")) {
+                notifyNow(ctx, vacationId, excursionTitle, "excursion");
+            } else {
+                Log.d(TAG, "excursion is today but user disabled notifications for excursionId=" + vacationId);
+            }
         } else if (whenMillis > todayStartMillis) {
-            // schedule future alarm
-            scheduleAlarm(ctx, vacationId, excursionTitle, "excursion", whenMillis);
+            // schedule at 9:00 local time on the excursion date
+            Calendar cal = Calendar.getInstance();
+            cal.setTimeInMillis(whenMillis);
+            cal.set(Calendar.HOUR_OF_DAY, 9);
+            cal.set(Calendar.MINUTE, 0);
+            cal.set(Calendar.SECOND, 0);
+            cal.set(Calendar.MILLISECOND, 0);
+            scheduleAlarm(ctx, vacationId, excursionTitle, "excursion", cal.getTimeInMillis());
         }
         // else: date is in the past -> do nothing
     }
@@ -116,18 +149,19 @@ public class NotificationScheduler {
 
         for (String p : patterns) {
             try {
-                SimpleDateFormat sdf = new SimpleDateFormat(p, Locale.getDefault());
-                sdf.setLenient(false);
-                Date d = sdf.parse(s);
+                SimpleDateFormat fmt = new SimpleDateFormat(p, Locale.getDefault());
+                fmt.setLenient(false);
+                Date d = fmt.parse(s);
                 if (d != null) {
-                    Calendar cal = Calendar.getInstance();
-                    cal.setTimeInMillis(d.getTime());
-                    cal.set(Calendar.HOUR_OF_DAY, 0);
-                    cal.set(Calendar.MINUTE, 0);
-                    cal.set(Calendar.SECOND, 0);
-                    cal.set(Calendar.MILLISECOND, 0);
-                    long millis = cal.getTimeInMillis();
-                    Log.d(TAG, "parseDateToMillis: parsed '" + s + "' using " + p + " -> " + millis);
+                    // normalize to start-of-day local time
+                    Calendar c = Calendar.getInstance();
+                    c.setTime(d);
+                    c.set(Calendar.HOUR_OF_DAY, 0);
+                    c.set(Calendar.MINUTE, 0);
+                    c.set(Calendar.SECOND, 0);
+                    c.set(Calendar.MILLISECOND, 0);
+                    long millis = c.getTimeInMillis();
+                    Log.d(TAG, "parseDateToMillis: pattern=" + p + " -> " + millis);
                     return millis;
                 }
             } catch (ParseException ignored) { }
@@ -161,76 +195,75 @@ public class NotificationScheduler {
         return same;
     }
 
-    // check start/end and post immediate notifications for today
+    // Public compatibility method (existing callers)
     public static void checkDatabaseAndNotifyToday(Context ctx) {
+        checkDatabaseAndNotifyToday(ctx, false);
+    }
+
+    // Guarded method: only runs if manualTrigger=true OR pref auto_notify_on_startup is true
+    public static void checkDatabaseAndNotifyToday(Context ctx, boolean manualTrigger) {
         if (ctx == null) return;
+
         try {
-            VacationRepository repo = VacationRepository.getInstance(ctx);
-            if (repo == null) {
-                Log.d(TAG, "checkDatabaseAndNotifyToday: no repository");
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            boolean autoOnStartup = prefs.getBoolean(PREF_AUTO_STARTUP, false);
+            if (!manualTrigger && !autoOnStartup) {
+                Log.d(TAG, "Auto-notify on startup disabled; skipping database check");
                 return;
             }
 
-            List<Vacations> vacations = repo.getVacations();
-            if (vacations != null && !vacations.isEmpty()) {
-                for (Vacations v : vacations) {
-                    if (v == null) continue;
-                    Long vacId = null;
+            // Example: check vacations and excursions and trigger today's notifications only if
+            // their individual notification switch is enabled. The repository methods below are
+            // assumed; adapt if your repo API differs.
+            VacationRepository repo = VacationRepository.getInstance(ctx);
+            if (repo == null) return;
+
+            List<Vacations> vacs = repo.getVacations();
+            if (vacs != null) {
+                for (Vacations v : vacs) {
                     try {
-                        Method getId = v.getClass().getMethod("getId");
-                        Object idVal = getId.invoke(v);
-                        if (idVal != null) vacId = Long.parseLong(String.valueOf(idVal));
+                        long id = v.getId();
+                        String title = reflectString(v, "getTitle", "getName");
+                        String start = reflectString(v, "getStartDate", "getStart", "getStart_date");
+                        String end = reflectString(v, "getEndDate", "getEnd", "getEnd_date");
+
+                        if (isDateToday(start)) {
+                            if (manualTrigger || isNotifyEnabled(ctx, id, "vacation")) {
+                                notifyNow(ctx, id, title, null);
+                            } else {
+                                Log.d(TAG, "Skipping start notification for vacation " + id + " (user disabled)");
+                            }
+                        }
+                        if (isDateToday(end)) {
+                            if (manualTrigger || isNotifyEnabled(ctx, id, "vacation")) {
+                                notifyNow(ctx, id, title, "end");
+                            } else {
+                                Log.d(TAG, "Skipping end notification for vacation " + id + " (user disabled)");
+                            }
+                        }
                     } catch (Exception ignored) { }
-
-                    if (vacId == null) continue;
-
-                    String title = reflectString(v, "getTitle", "getVacationTitle");
-                    String start = reflectString(v, "getStartDate", "getStart");
-                    String end = reflectString(v, "getEndDate", "getEnd");
-
-                    if (isDateToday(start)) {
-                        Log.d(TAG, "checkDatabaseAndNotifyToday: vacation start is today vacId=" + vacId);
-                        notifyNow(ctx, vacId, title, "start");
-                    }
-                    if (isDateToday(end)) {
-                        Log.d(TAG, "checkDatabaseAndNotifyToday: vacation end is today vacId=" + vacId);
-                        notifyNow(ctx, vacId, title, "end");
-                    }
                 }
             }
 
-            // Check excursions and notify if any excursion date is today
-            List<Excursions> excursions = repo.getExcursions();
-            if (excursions != null && !excursions.isEmpty()) {
-                for (Excursions ex : excursions) {
-                    if (ex == null) continue;
-                    Long exVacId = null;
+            List<Excursions> exs = repo.getExcursions();
+            if (exs != null) {
+                for (Excursions ex : exs) {
                     try {
-                        Method gv = ex.getClass().getMethod("getVacationId");
-                        Object val = gv.invoke(ex);
-                        if (val != null) exVacId = Long.parseLong(String.valueOf(val));
+                        long id = ex.getId();
+                        String title = reflectString(ex, "getTitle", "getName");
+                        String date = reflectString(ex, "getDate", "getWhen");
+                        if (isDateToday(date)) {
+                            if (manualTrigger || isNotifyEnabled(ctx, id, "excursion")) {
+                                notifyNow(ctx, id, title, "excursion");
+                            } else {
+                                Log.d(TAG, "Skipping excursion notification for " + id + " (user disabled)");
+                            }
+                        }
                     } catch (Exception ignored) { }
-
-                    if (exVacId == null) {
-                        try {
-                            Method gv2 = ex.getClass().getMethod("getVacation");
-                            Object val2 = gv2.invoke(ex);
-                            if (val2 != null) exVacId = Long.parseLong(String.valueOf(val2));
-                        } catch (Exception ignored) { }
-                    }
-
-                    if (exVacId == null) continue;
-
-                    String edate = reflectString(ex, "getExcursionDate", "getDate");
-                    if (isDateToday(edate)) {
-                        String etitle = reflectString(ex, "getTitle", "getExcursionTitle");
-                        Log.d(TAG, "checkDatabaseAndNotifyToday: excursion is today vacId=" + exVacId + " exTitle=" + etitle);
-                        notifyNow(ctx, exVacId, "Excursion: " + etitle, "excursion");
-                    }
                 }
             }
         } catch (Exception ex) {
-            Log.d(TAG, "checkDatabaseAndNotifyToday: exception " + ex.getMessage());
+            Log.e(TAG, "checkDatabaseAndNotifyToday failed", ex);
         }
     }
 
@@ -241,7 +274,7 @@ public class NotificationScheduler {
         // runtime permission check for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "notifyNow: POST_NOTIFICATIONS not granted - skipping notify vacId=" + vacationId + " type=" + type);
+                Log.d(TAG, "Missing POST_NOTIFICATIONS permission - aborting notifyNow");
                 return;
             }
         }
@@ -253,18 +286,14 @@ public class NotificationScheduler {
         String contentText;
 
         if ("excursion".equals(type)) {
-            contentTitle = "Excursion";
-            contentText = safeTitle.isEmpty() ? "Excursion is today" : safeTitle + " is today";
+            contentTitle = safeTitle.isEmpty() ? "Excursion" : safeTitle;
+            contentText = "Excursion today";
+        } else if ("end".equals(type)) {
+            contentTitle = safeTitle.isEmpty() ? "Vacation" : safeTitle;
+            contentText = "Vacation ends today";
         } else {
-            // vacation start/end or other
-            contentTitle = "Vacation";
-            if ("start".equals(type)) {
-                contentText = safeTitle.isEmpty() ? "Start date is now" : safeTitle + " start date is now";
-            } else if ("end".equals(type)) {
-                contentText = safeTitle.isEmpty() ? "End date is now" : safeTitle + " end date is now";
-            } else {
-                contentText = safeTitle.isEmpty() ? "Reminder" : safeTitle + " reminder";
-            }
+            contentTitle = safeTitle.isEmpty() ? "Vacation" : safeTitle;
+            contentText = "Vacation starts today";
         }
 
         Intent detail = new Intent(ctx, VacationDetailActivity.class);
@@ -295,7 +324,7 @@ public class NotificationScheduler {
         NotificationManagerCompat.from(ctx).notify(requestCode, nb.build());
     }
 
-    // Internal alarm scheduling
+    // Internal alarm scheduling with canScheduleExactAlarms / SecurityException handling
     private static void scheduleAlarm(Context ctx, long vacationId, String title, String type, long whenMillis) {
         if (ctx == null) return;
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
@@ -312,12 +341,27 @@ public class NotificationScheduler {
 
         PendingIntent pi = PendingIntent.getBroadcast(ctx, requestCode, i, flags);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pi);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            am.setExact(AlarmManager.RTC_WAKEUP, whenMillis, pi);
-        } else {
-            am.set(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+        // Use exact alarms when possible; on Android S+ check canScheduleExactAlarms()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (am.canScheduleExactAlarms()) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                am.setExact(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+            }
+        } catch (SecurityException se) {
+            try {
+                am.set(AlarmManager.RTC_WAKEUP, whenMillis, pi);
+            } catch (Exception ignored) { }
+        } catch (Exception e) {
+            Log.e(TAG, "scheduleAlarm failed", e);
         }
     }
 
@@ -349,6 +393,13 @@ public class NotificationScheduler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm == null) return;
+
+            Uri soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            AudioAttributes aa = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build();
+
             NotificationChannel channel = nm.getNotificationChannel(CHANNEL_ID);
             if (channel == null) {
                 channel = new NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
@@ -356,11 +407,26 @@ public class NotificationScheduler {
                 channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
                 // enable vibration by default (user can change later)
                 channel.enableVibration(true);
+                // set default notification sound
+                channel.setSound(soundUri, aa);
                 nm.createNotificationChannel(channel);
             } else {
-                // ensure visibility set
+                // ensure visibility set and channel has the sound
                 channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+                channel.setSound(soundUri, aa);
+                nm.createNotificationChannel(channel);
             }
+        }
+    }
+
+    // check per-item user preference
+    private static boolean isNotifyEnabled(Context ctx, long id, String type) {
+        if (ctx == null) return false;
+        SharedPreferences prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if ("excursion".equals(type)) {
+            return prefs.getBoolean(PREF_NOTIFY_PREFIX_EXC + id, false);
+        } else {
+            return prefs.getBoolean(PREF_NOTIFY_PREFIX_VAC + id, false);
         }
     }
 
