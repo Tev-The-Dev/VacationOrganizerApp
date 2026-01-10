@@ -1,4 +1,3 @@
-// java
 package com.zybooks.d308vacationplanner;
 
 import android.Manifest;

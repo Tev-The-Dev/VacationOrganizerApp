@@ -1,7 +1,5 @@
-// java
 package com.zybooks.d308vacationplanner;
 
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Toast;

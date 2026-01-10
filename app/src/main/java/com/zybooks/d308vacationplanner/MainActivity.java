@@ -1,4 +1,3 @@
-// java
 package com.zybooks.d308vacationplanner;
 
 import android.Manifest;
@@ -6,7 +5,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.MenuItem;
 import android.view.View;
+import android.widget.ImageButton;
+import android.widget.PopupMenu;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.Nullable;
@@ -20,6 +23,8 @@ import androidx.core.view.WindowInsetsCompat;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -30,6 +35,9 @@ public class MainActivity extends AppCompatActivity {
 
     // Guard so we only check/ask for notifications once per process launch
     private static boolean sNotificationsChecked = false;
+
+    private ReportGenerator reportGenerator;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -45,6 +53,20 @@ public class MainActivity extends AppCompatActivity {
         View vacationsButton = findViewById(R.id.btn_view_vacations);
         vacationsButton.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, VacationActivity.class)));
+
+        // Initialize report generator and wire nav menu button (dropdown) for report actions
+        reportGenerator = new ReportGenerator(this);
+        // Immediate debug output to terminal / logcat
+        if (reportGenerator != null) {
+            reportGenerator.printToTerminal("ReportGenerator ready");
+            // example/demo invocation
+            reportGenerator.printVacationDebug(1L, "Beach Trip (demo)", "2026-06-01", "2026-06-07");
+        }
+
+        ImageButton navMenuBtn = findViewById(R.id.btn_nav_menu);
+        if (navMenuBtn != null) {
+            navMenuBtn.setOnClickListener(this::showNavMenu);
+        }
 
         // Run the notification check/request only once per process lifetime
         if (!sNotificationsChecked) {
@@ -65,6 +87,28 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Example: if you launch Add/Delete from here, use startActivityForResult(...) with REQ_ADD/REQ_DELETE
+    }
+
+    private void showNavMenu(View anchor) {
+        PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add(0, 1, 0, "Generate report (all vacations)");
+        popup.setOnMenuItemClickListener(this::onNavMenuItemClicked);
+        popup.show();
+    }
+
+    private boolean onNavMenuItemClicked(MenuItem item) {
+        if (item.getItemId() == 1) {
+            if (reportGenerator != null) {
+                Toast.makeText(this, "Generating report...", Toast.LENGTH_SHORT).show();
+                reportGenerator.printToTerminal("User requested report generation");
+                // refresh/load current vacations and print each to terminal
+                loadVacations();
+            } else {
+                Toast.makeText(this, "Report generator unavailable", Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+        return false;
     }
 
     @Override
@@ -97,6 +141,57 @@ public class MainActivity extends AppCompatActivity {
         try {
             // prefer direct call if available
             java.util.List<?> items = repo.getVacations();
+            if (reportGenerator != null) {
+                reportGenerator.printToTerminal("Loaded " + (items == null ? 0 : items.size()) + " vacation(s)");
+            }
+            if (items != null) {
+                for (Object it : items) {
+                    if (it == null) continue;
+                    try {
+                        Method getId = it.getClass().getMethod("getId");
+                        Method getTitle = it.getClass().getMethod("getTitle");
+                        Method getStart = null;
+                        Method getEnd = null;
+                        // common names for date fields
+                        try { getStart = it.getClass().getMethod("getStartDate"); } catch (Exception ignored) {}
+                        try { getEnd = it.getClass().getMethod("getEndDate"); } catch (Exception ignored) {}
+                        // invoke safely
+                        Long id = null;
+                        String title = null;
+                        String start = null;
+                        String end = null;
+                        try { Object o = getId.invoke(it); if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue(); } catch (Exception ignored) {}
+                        try { Object o = getTitle.invoke(it); if (o != null) title = o.toString(); } catch (Exception ignored) {}
+                        try { if (getStart != null) { Object o = getStart.invoke(it); if (o != null) start = o.toString(); } } catch (Exception ignored) {}
+                        try { if (getEnd != null) { Object o = getEnd.invoke(it); if (o != null) end = o.toString(); } } catch (Exception ignored) {}
+
+                        if (reportGenerator != null) {
+                            reportGenerator.printVacationDebug(id, title, start, end);
+                        }
+
+                        // Try to print excursions by asking the repository for excursions for this vacation id
+                        if (id != null) {
+                            try {
+                                printExcursionsForVacation(repo, id);
+                            } catch (Exception ignored) {}
+                        }
+
+                    } catch (Exception e) {
+                        // fallback: print item toString
+                        if (reportGenerator != null) {
+                            reportGenerator.printToTerminal("Vacation: " + it.toString());
+                        }
+                        // still attempt to find excursions via repo if we can extract an id
+                        try {
+                            Method getId = it.getClass().getMethod("getId");
+                            Object o = getId.invoke(it);
+                            Long id = null;
+                            if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue();
+                            if (id != null) printExcursionsForVacation(repo, id);
+                        } catch (Exception ignored2) {}
+                    }
+                }
+            }
             // update your adapter here, e.g. mAdapter.setItems(items); mAdapter.notifyDataSetChanged();
         } catch (Exception e) {
             // reflection fallback if repo method signature differs
@@ -106,9 +201,157 @@ public class MainActivity extends AppCompatActivity {
                 if (res instanceof List) {
                     @SuppressWarnings("unchecked")
                     List<?> items = (List<?>) res;
+                    if (reportGenerator != null) {
+                        reportGenerator.printToTerminal("Loaded (reflected) " + (items == null ? 0 : items.size()) + " vacation(s)");
+                    }
+                    if (items != null) {
+                        for (Object it : items) {
+                            if (it == null) continue;
+                            try {
+                                Method getId = it.getClass().getMethod("getId");
+                                Method getTitle = it.getClass().getMethod("getTitle");
+                                Method getStart = null;
+                                Method getEnd = null;
+                                try { getStart = it.getClass().getMethod("getStartDate"); } catch (Exception ignored) {}
+                                try { getEnd = it.getClass().getMethod("getEndDate"); } catch (Exception ignored) {}
+
+                                Long id = null;
+                                String title = null;
+                                String start = null;
+                                String end = null;
+                                try { Object o = getId.invoke(it); if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue(); } catch (Exception ignored) {}
+                                try { Object o = getTitle.invoke(it); if (o != null) title = o.toString(); } catch (Exception ignored) {}
+                                try { if (getStart != null) { Object o = getStart.invoke(it); if (o != null) start = o.toString(); } } catch (Exception ignored) {}
+                                try { if (getEnd != null) { Object o = getEnd.invoke(it); if (o != null) end = o.toString(); } } catch (Exception ignored) {}
+
+                                if (reportGenerator != null) {
+                                    reportGenerator.printVacationDebug(id, title, start, end);
+                                }
+
+                                if (id != null) {
+                                    try { printExcursionsForVacation(repo, id); } catch (Exception ignored) {}
+                                }
+                            } catch (Exception ignored) {
+                                if (reportGenerator != null) {
+                                    reportGenerator.printToTerminal("Vacation: " + it.toString());
+                                }
+                            }
+                        }
+                    }
                     // update your adapter here
                 }
             } catch (Exception ignored) {}
+        }
+    }
+
+    // Try to discover common repository methods that return excursions for a vacation id,
+    // invoke them reflectively and print each excursion.
+    private void printExcursionsForVacation(Object repoObj, Long vacationId) {
+        if (repoObj == null || vacationId == null || reportGenerator == null) return;
+
+        String[] candidateRepoMethods = new String[] {
+                "getExcursionsForVacation", "getExcursionsByVacationId", "getExcursionsForVacId",
+                "getExcursionsForVacationId", "getExcursionsByVacation", "getExcursions"
+        };
+
+        Object found = null;
+        Method foundMethod = null;
+        for (String name : candidateRepoMethods) {
+            try {
+                // try Long wrapper
+                Method m = repoObj.getClass().getMethod(name, Long.class);
+                if (m != null) {
+                    foundMethod = m;
+                    found = m.invoke(repoObj, vacationId);
+                    if (found != null) break;
+                }
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception e) {
+                // try primitive long parameter
+                try {
+                    Method m2 = repoObj.getClass().getMethod(name, long.class);
+                    if (m2 != null) {
+                        foundMethod = m2;
+                        found = m2.invoke(repoObj, vacationId.longValue());
+                        if (found != null) break;
+                    }
+                } catch (Exception ignored2) {}
+            }
+            // try zero-arg method (some repos return all excursions and filter client-side)
+            if (found == null) {
+                try {
+                    Method m0 = repoObj.getClass().getMethod(name);
+                    if (m0 != null) {
+                        foundMethod = m0;
+                        found = m0.invoke(repoObj);
+                        if (found != null) break;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        if (found == null) return;
+
+        List<?> excList = null;
+        if (found instanceof List) {
+            excList = (List<?>) found;
+        } else if (found.getClass().isArray()) {
+            Object[] arr = (Object[]) found;
+            excList = new ArrayList<>(Arrays.asList(arr));
+        }
+
+        if (excList == null || excList.isEmpty()) return;
+
+        // If the repo returned a full list, filter by vacationId where possible
+        List<Object> toPrint = new ArrayList<>();
+        for (Object ex : excList) {
+            if (ex == null) continue;
+            boolean matches = true;
+            // if excursion has getVacationId, verify it matches
+            try {
+                Method getVacId = ex.getClass().getMethod("getVacationId");
+                Object o = getVacId.invoke(ex);
+                Long vid = null;
+                if (o instanceof Long) vid = (Long) o; else if (o instanceof Number) vid = ((Number) o).longValue();
+                if (vid != null && !vid.equals(vacationId)) matches = false;
+            } catch (Exception ignored) {}
+            if (matches) toPrint.add(ex);
+        }
+
+        if (toPrint.isEmpty()) return;
+
+        reportGenerator.printToTerminal("  Found " + toPrint.size() + " excursion(s) for vacation id=" + vacationId + ":");
+        for (Object ex : toPrint) {
+            if (ex == null) continue;
+            Long exId = null;
+            String exTitle = null;
+            String exDate = null;
+            try {
+                Method getId = ex.getClass().getMethod("getId");
+                try { Object o = getId.invoke(ex); if (o instanceof Long) exId = (Long) o; else if (o instanceof Number) exId = ((Number) o).longValue(); } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+            try {
+                Method getTitle = ex.getClass().getMethod("getTitle");
+                try { Object o = getTitle.invoke(ex); if (o != null) exTitle = o.toString(); } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+            try {
+                Method getDate = ex.getClass().getMethod("getExcursionDate");
+                try { Object o = getDate.invoke(ex); if (o != null) exDate = o.toString(); } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+            // fallback common names
+            if (exDate == null) {
+                String[] dateNames = new String[] {"getDate", "getStartDate", "getStart"};
+                for (String dn : dateNames) {
+                    try {
+                        Method m = ex.getClass().getMethod(dn);
+                        try { Object o = m.invoke(ex); if (o != null) { exDate = o.toString(); break; } } catch (Exception ignored) {}
+                    } catch (Exception ignored) {}
+                }
+            }
+
+            reportGenerator.printToTerminal("    Excursion id=" + (exId == null ? "null" : exId)
+                    + ", title=\"" + (exTitle == null ? "" : exTitle) + "\""
+                    + ", date=\"" + (exDate == null ? "" : exDate) + "\"");
         }
     }
 }
