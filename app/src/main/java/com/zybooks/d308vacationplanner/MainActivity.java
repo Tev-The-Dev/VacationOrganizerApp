@@ -195,13 +195,12 @@ public class MainActivity extends AppCompatActivity {
                         showLoginDialog();
                     }
                 })
-                .setNegativeButton("Cancel", (dialog, which) -> {
-                    Toast.makeText(MainActivity.this, "Login required to view vacations", Toast.LENGTH_SHORT).show();
-                })
                 .create();
 
+        dlg.setCanceledOnTouchOutside(false);
         dlg.show();
     }
+
 
     private void showChangeCredentialsDialog() {
         SharedPreferences prefs = getSharedPreferences(PREFS_AUTH, MODE_PRIVATE);
