@@ -14,11 +14,11 @@ For this assessment, you have an opportunity to test your competency as a mobile
 
 
 ## OPERATION GUIDE
-Once the application launches, you will be greeted by a homescreen. Here you are able to view the list of vacations that you have already created. Click/tap the "View Vacaitons" button. This will take you to the Vacation List screen.
+Once the application launches, you will be greeted by a login popup. The default credentials are 'Admin' and 'AdminPassword'. Once entered, you will then be presented with a homescreen. Here you are able to do 2 things, 1: change the login credentials, and 2: View Vacations. Click/tap the "View Vacaitons" button. This will take you to the Vacation List screen.
 On the Vacation List page, each vacation is a button to click. At the bottom, there is an "Add Vacation button". Click/Tap the "Add Vacation".
 This page will allow you add a new vacation. The dates are validated to not allow the user to enter a date that is not today or greater. Once you confirm your entry, tap "Save" button and it will return you to the Vacation List page.
 On the Vacation List page, tap on one of the vacations. It will take you to the Vacation Detail page. Here you will see the Title, Accommodation, Start Date and End Date for the vacation you selected. Above this you will see a "Delete Vacation" button and an "Edit Vacation" button.
-If the vacation has any excursions associated with it, the vacation will not be deleted. Tappgin the "Edit Vacation" button will allow you to edit the current vacations details. Tapping save willl save it back to the repository and return you to the Vacation Detail screen with the updated information.
+If the vacation has any excursions associated with it, the vacation will not be deleted. Tappgin the "Edit Vacation" button will allow you to edit the current vacations details. Tapping save will save it back to the repository and return you to the Vacation Detail screen with the updated information.
 At the bottom of the page is the "Associated Excursions" button. Tapping on this button opens the Excursion List page with the associated excursions to this vacation. Similar to the Vacation List page, each excursion is a button. There is also an "Add Excursion" button at the bottom that will allow you to add a new excursion by Title and Date. The date must be between the vacation start date and end date.
 Saving will return you to the Excursion List page. Tapping on an excursion will take you to the Excursion Detail page. This shows the excursions title and date.
 
