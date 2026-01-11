@@ -2,14 +2,17 @@ package com.zybooks.d308vacationplanner;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.Toast;
 
@@ -36,11 +39,21 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQ_DELETE = 101;
     private static final int REQ_NOTIF = 4001;
 
-    // Guard so we only check/ask for notifications once per process launch
+    // SharedPrefs keys for auth
+    private static final String PREFS_AUTH = "auth_prefs";
+    private static final String KEY_USERNAME = "username";
+    private static final String KEY_PWD_HASH = "pwd_hash";
+    private static final String KEY_SALT = "pwd_salt";
+    private static final String KEY_ITER = "pwd_iter";
+    private static final String KEY_NEEDS_CHANGE = "needs_change";
+
+    // Guards so we only check/ask once per process launch
     private static boolean sNotificationsChecked = false;
+    private static boolean sAuthenticated = false; // process-lifetime auth flag
 
     private ReportGenerator reportGenerator;
-
+    private View mVacationsButton;
+    private View mChangeCredsButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,16 +66,19 @@ public class MainActivity extends AppCompatActivity {
             return insets;
         });
 
-        View vacationsButton = findViewById(R.id.btn_view_vacations);
-        vacationsButton.setOnClickListener(v ->
-                startActivity(new Intent(MainActivity.this, VacationActivity.class)));
+        mVacationsButton = findViewById(R.id.btn_view_vacations);
+        if (mVacationsButton != null) mVacationsButton.setVisibility(View.GONE);
 
-        // Initialize report generator and wire nav menu button (dropdown) for report actions
+        mChangeCredsButton = findViewById(R.id.btn_change_credentials);
+        if (mChangeCredsButton != null) {
+            mChangeCredsButton.setVisibility(View.GONE);
+            mChangeCredsButton.setOnClickListener(v -> showChangeCredentialsDialog());
+        }
+
+        // Initialize report generator
         reportGenerator = new ReportGenerator(this);
-        // Immediate debug output to terminal / logcat
         if (reportGenerator != null) {
             reportGenerator.printToTerminal("ReportGenerator ready");
-            // example/demo invocation
             reportGenerator.printVacationDebug(1L, "Beach Trip (demo)", "2026-06-01", "2026-06-07");
         }
 
@@ -71,9 +87,19 @@ public class MainActivity extends AppCompatActivity {
             navMenuBtn.setOnClickListener(this::showNavMenu);
         }
 
-        // Run the notification check/request only once per process lifetime
+        // Ensure default credentials exist
+        ensureDefaultCredentials();
+
+        // Only prompt for login if not already authenticated in this process
+        if (sAuthenticated) {
+            revealVacationsButton();
+        } else {
+            showLoginDialog();
+        }
+
+        // Notification permission/check once per process
         if (!sNotificationsChecked) {
-            sNotificationsChecked = true; // ensure it's only attempted once
+            sNotificationsChecked = true;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                         == PackageManager.PERMISSION_GRANTED) {
@@ -84,12 +110,196 @@ public class MainActivity extends AppCompatActivity {
                             REQ_NOTIF);
                 }
             } else {
-                // Pre-Android 13: permissions not required at runtime
                 NotificationScheduler.checkDatabaseAndNotifyToday(this);
             }
         }
+    }
 
-        // Example: if you launch Add/Delete from here, use startActivityForResult(...) with REQ_ADD/REQ_DELETE
+    private void ensureDefaultCredentials() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_AUTH, MODE_PRIVATE);
+        if (!prefs.contains(KEY_PWD_HASH)) {
+            String defaultUser = "Admin";
+            String defaultPwd = "AdminPassword";
+            String saltBase64 = PasswordUtil.generateSaltBase64();
+            byte[] salt = android.util.Base64.decode(saltBase64, android.util.Base64.NO_WRAP);
+            int iter = PasswordUtil.getDefaultIterations();
+            char[] pwdChars = defaultPwd.toCharArray();
+            String hashBase64 = PasswordUtil.hashPasswordBase64(pwdChars, salt, iter);
+            Arrays.fill(pwdChars, '\0');
+
+            prefs.edit()
+                    .putString(KEY_USERNAME, defaultUser)
+                    .putString(KEY_SALT, saltBase64)
+                    .putString(KEY_PWD_HASH, hashBase64)
+                    .putInt(KEY_ITER, iter)
+                    .putBoolean(KEY_NEEDS_CHANGE, true)
+                    .apply();
+            if (reportGenerator != null) reportGenerator.printToTerminal("Default credentials created (Admin) - change required");
+        }
+    }
+
+    private void showLoginDialog() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_AUTH, MODE_PRIVATE);
+        final String storedUser = prefs.getString(KEY_USERNAME, "Admin");
+        final String storedSaltBase64 = prefs.getString(KEY_SALT, null);
+        final String storedHash = prefs.getString(KEY_PWD_HASH, null);
+        final int iterations = prefs.getInt(KEY_ITER, PasswordUtil.getDefaultIterations());
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        final EditText userInput = new EditText(this);
+        userInput.setHint("Username");
+        userInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL);
+        userInput.setText(storedUser);
+        layout.addView(userInput);
+
+        final EditText pwdInput = new EditText(this);
+        pwdInput.setHint("Password");
+        pwdInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(pwdInput);
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("Log in")
+                .setView(layout)
+                .setCancelable(false)
+                .setPositiveButton("Log in", (dialog, which) -> {
+                    String user = userInput.getText() == null ? "" : userInput.getText().toString().trim();
+                    char[] pwd = pwdInput.getText() == null ? new char[0] : pwdInput.getText().toString().toCharArray();
+
+                    boolean ok = false;
+                    if (user != null && user.equals(storedUser) && storedSaltBase64 != null && storedHash != null) {
+                        byte[] salt = android.util.Base64.decode(storedSaltBase64, android.util.Base64.NO_WRAP);
+                        ok = PasswordUtil.verifyPassword(pwd, storedHash, salt, iterations);
+                    }
+
+                    Arrays.fill(pwd, '\0');
+
+                    if (ok) {
+                        if (reportGenerator != null) reportGenerator.printToTerminal("User logged in: " + user);
+                        Toast.makeText(MainActivity.this, "Login successful", Toast.LENGTH_SHORT).show();
+
+                        boolean needsChange = prefs.getBoolean(KEY_NEEDS_CHANGE, false);
+                        if (needsChange) {
+                            if (reportGenerator != null) reportGenerator.printToTerminal("Default credentials used; forcing change");
+                            showChangeCredentialsDialog();
+                        } else {
+                            sAuthenticated = true;
+                            revealVacationsButton();
+                        }
+                    } else {
+                        if (reportGenerator != null) reportGenerator.printToTerminal("Login failed for user: " + user);
+                        Toast.makeText(MainActivity.this, "Invalid credentials", Toast.LENGTH_SHORT).show();
+                        showLoginDialog();
+                    }
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    Toast.makeText(MainActivity.this, "Login required to view vacations", Toast.LENGTH_SHORT).show();
+                })
+                .create();
+
+        dlg.show();
+    }
+
+    private void showChangeCredentialsDialog() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_AUTH, MODE_PRIVATE);
+        final String currentUser = prefs.getString(KEY_USERNAME, "Admin");
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = (int) (16 * getResources().getDisplayMetrics().density);
+        layout.setPadding(padding, padding, padding, padding);
+
+        final EditText userInput = new EditText(this);
+        userInput.setHint("New username");
+        userInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_NORMAL);
+        userInput.setText(currentUser);
+        layout.addView(userInput);
+
+        final EditText pwdInput = new EditText(this);
+        pwdInput.setHint("New password");
+        pwdInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(pwdInput);
+
+        final EditText pwdConfirm = new EditText(this);
+        pwdConfirm.setHint("Confirm password");
+        pwdConfirm.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        layout.addView(pwdConfirm);
+
+        AlertDialog dlg = new AlertDialog.Builder(this)
+                .setTitle("Change credentials (required)")
+                .setView(layout)
+                .setCancelable(false)
+                .setPositiveButton("Change", (dialog, which) -> {
+                    String newUser = userInput.getText() == null ? "" : userInput.getText().toString().trim();
+                    char[] newPwd = pwdInput.getText() == null ? new char[0] : pwdInput.getText().toString().toCharArray();
+                    char[] confirm = pwdConfirm.getText() == null ? new char[0] : pwdConfirm.getText().toString().toCharArray();
+
+                    if (newUser.isEmpty()) {
+                        Toast.makeText(MainActivity.this, "Username cannot be empty", Toast.LENGTH_SHORT).show();
+                        showChangeCredentialsDialog();
+                        return;
+                    }
+                    if (newPwd.length < 6) {
+                        Toast.makeText(MainActivity.this, "Password must be at least 6 characters", Toast.LENGTH_SHORT).show();
+                        showChangeCredentialsDialog();
+                        return;
+                    }
+                    boolean match = newPwd.length == confirm.length;
+                    if (match) {
+                        for (int i = 0; i < newPwd.length; i++) {
+                            if (newPwd[i] != confirm[i]) { match = false; break; }
+                        }
+                    }
+                    if (!match) {
+                        Toast.makeText(MainActivity.this, "Passwords do not match", Toast.LENGTH_SHORT).show();
+                        Arrays.fill(newPwd, '\0');
+                        Arrays.fill(confirm, '\0');
+                        showChangeCredentialsDialog();
+                        return;
+                    }
+
+                    String saltBase64 = PasswordUtil.generateSaltBase64();
+                    byte[] salt = android.util.Base64.decode(saltBase64, android.util.Base64.NO_WRAP);
+                    int iter = PasswordUtil.getDefaultIterations();
+                    String hashBase64 = PasswordUtil.hashPasswordBase64(newPwd, salt, iter);
+                    Arrays.fill(newPwd, '\0');
+                    Arrays.fill(confirm, '\0');
+
+                    prefs.edit()
+                            .putString(KEY_USERNAME, newUser)
+                            .putString(KEY_SALT, saltBase64)
+                            .putString(KEY_PWD_HASH, hashBase64)
+                            .putInt(KEY_ITER, iter)
+                            .putBoolean(KEY_NEEDS_CHANGE, false)
+                            .apply();
+
+                    if (reportGenerator != null) reportGenerator.printToTerminal("Credentials changed for user: " + newUser);
+                    Toast.makeText(MainActivity.this, "Credentials updated", Toast.LENGTH_SHORT).show();
+
+                    sAuthenticated = true;
+                    revealVacationsButton();
+                })
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    Toast.makeText(MainActivity.this, "You must change default credentials to continue", Toast.LENGTH_SHORT).show();
+                    showChangeCredentialsDialog();
+                })
+                .create();
+
+        dlg.show();
+    }
+
+    private void revealVacationsButton() {
+        if (mVacationsButton != null) {
+            mVacationsButton.setVisibility(View.VISIBLE);
+            mVacationsButton.setOnClickListener(v ->
+                    startActivity(new Intent(MainActivity.this, VacationActivity.class)));
+        }
+        if (mChangeCredsButton != null) {
+            mChangeCredsButton.setVisibility(View.VISIBLE);
+        }
     }
 
     private void showNavMenu(View anchor) {
@@ -105,22 +315,18 @@ public class MainActivity extends AppCompatActivity {
             if (reportGenerator != null) {
                 Toast.makeText(this, "Generating report...", Toast.LENGTH_SHORT).show();
                 reportGenerator.printToTerminal("User requested report generation");
-                // refresh/load current vacations and print each to terminal
                 loadVacations();
-                // indicate completion to the user
                 Toast.makeText(this, "Report Generated", Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(this, "Report generator unavailable", Toast.LENGTH_SHORT).show();
             }
             return true;
         } else if (item.getItemId() == 2) {
-            // prompt the user for an id and search
             promptAndSearchVacation();
             return true;
         }
         return false;
     }
-
 
     private void promptAndSearchVacation() {
         final EditText input = new EditText(this);
@@ -140,14 +346,105 @@ public class MainActivity extends AppCompatActivity {
                         searchAndPrintVacation(id);
                     } catch (NumberFormatException e) {
                         if (reportGenerator != null) reportGenerator.printToTerminal("Invalid id: " + val);
+                        Toast.makeText(MainActivity.this, "Invalid id format", Toast.LENGTH_SHORT).show();
                     }
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    // Find a vacation by id (try repo direct methods then fallback to scanning all vacations).
-    // Print the vacation and associated excursions when found.
+    // --- Reporting / repository helper methods (reflection-friendly) ---
+
+    private void loadVacations() {
+        VacationRepository repo = VacationRepository.getInstance(this);
+        if (repo == null) {
+            if (reportGenerator != null) reportGenerator.printToTerminal("Repository unavailable");
+            return;
+        }
+        try {
+            List<?> items = repo.getVacations();
+            if (reportGenerator != null) reportGenerator.printToTerminal("Loaded " + (items == null ? 0 : items.size()) + " vacation(s)");
+            if (items != null) {
+                for (Object it : items) {
+                    if (it == null) continue;
+                    try {
+                        Long id = null;
+                        String title = null;
+                        String start = null;
+                        String end = null;
+                        try {
+                            Method getId = it.getClass().getMethod("getId");
+                            Object o = getId.invoke(it);
+                            if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue();
+                        } catch (Exception ignored) {}
+                        try {
+                            Method getTitle = it.getClass().getMethod("getTitle");
+                            Object o = getTitle.invoke(it);
+                            if (o != null) title = o.toString();
+                        } catch (Exception ignored) {}
+                        try {
+                            Method getStart = it.getClass().getMethod("getStartDate");
+                            Object o = getStart.invoke(it);
+                            if (o != null) start = o.toString();
+                        } catch (Exception ignored) {}
+                        try {
+                            Method getEnd = it.getClass().getMethod("getEndDate");
+                            Object o = getEnd.invoke(it);
+                            if (o != null) end = o.toString();
+                        } catch (Exception ignored) {}
+
+                        if (reportGenerator != null) reportGenerator.printVacationDebug(id, title, start, end);
+                    } catch (Exception e) {
+                        if (reportGenerator != null) reportGenerator.printToTerminal("Error printing vacation: " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // fallback via reflection
+            try {
+                Method m = repo.getClass().getMethod("getVacations");
+                Object res = m.invoke(repo);
+                if (res instanceof List) {
+                    @SuppressWarnings("unchecked")
+                    List<?> items = (List<?>) res;
+                    if (reportGenerator != null) reportGenerator.printToTerminal("Loaded (reflected) " + (items == null ? 0 : items.size()) + " vacation(s)");
+                    if (items != null) {
+                        for (Object it : items) {
+                            if (it == null) continue;
+                            try {
+                                Long id = null;
+                                String title = null;
+                                String start = null;
+                                String end = null;
+                                try {
+                                    Method getId = it.getClass().getMethod("getId");
+                                    Object o = getId.invoke(it);
+                                    if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue();
+                                } catch (Exception ignored) {}
+                                try {
+                                    Method getTitle = it.getClass().getMethod("getTitle");
+                                    Object o = getTitle.invoke(it);
+                                    if (o != null) title = o.toString();
+                                } catch (Exception ignored) {}
+                                try {
+                                    Method getStart = it.getClass().getMethod("getStartDate");
+                                    Object o = getStart.invoke(it);
+                                    if (o != null) start = o.toString();
+                                } catch (Exception ignored) {}
+                                try {
+                                    Method getEnd = it.getClass().getMethod("getEndDate");
+                                    Object o = getEnd.invoke(it);
+                                    if (o != null) end = o.toString();
+                                } catch (Exception ignored) {}
+                                if (reportGenerator != null) reportGenerator.printVacationDebug(id, title, start, end);
+                            } catch (Exception ignored) {}
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
     private void searchAndPrintVacation(Long vacationId) {
         if (vacationId == null || reportGenerator == null) return;
         VacationRepository repo = VacationRepository.getInstance(this);
@@ -158,7 +455,6 @@ public class MainActivity extends AppCompatActivity {
 
         Object vacationObj = null;
 
-        // Try common repository methods that accept an id
         String[] candidateMethods = new String[] {
                 "getVacation", "getVacationById", "findVacationById", "getById", "findById"
         };
@@ -170,7 +466,6 @@ public class MainActivity extends AppCompatActivity {
                 if (res != null) { vacationObj = res; break; }
             } catch (NoSuchMethodException ignored) {
             } catch (Exception e) {
-                // try primitive long
                 try {
                     Method m2 = repo.getClass().getMethod(name, long.class);
                     Object res2 = m2.invoke(repo, vacationId.longValue());
@@ -179,7 +474,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // fallback: iterate all vacations and match id
         if (vacationObj == null) {
             try {
                 List<?> all = repo.getVacations();
@@ -208,7 +502,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // Extract vacation fields and print
         Long id = null;
         String title = null;
         String start = null;
@@ -237,147 +530,11 @@ public class MainActivity extends AppCompatActivity {
         reportGenerator.printToTerminal("Search result:");
         reportGenerator.printVacationDebug(id, title, start, end);
 
-        // Print associated excursions (uses existing helper)
         try {
             printExcursionsForVacation(repo, vacationId);
         } catch (Exception ignored) {}
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == REQ_NOTIF) {
-            boolean granted = grantResults != null && grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            if (granted) {
-                NotificationScheduler.checkDatabaseAndNotifyToday(this);
-            }
-            // do not reset sNotificationsChecked — we only want the prompt/check once per process
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
-        // If a child activity signaled success, refresh UI / reload data.
-        if ((requestCode == REQ_ADD || requestCode == REQ_DELETE) && resultCode == RESULT_OK) {
-            loadVacations();
-        }
-    }
-
-    // Example reload method - adjust to your adapter / list implementation.
-    private void loadVacations() {
-        VacationRepository repo = VacationRepository.getInstance(this);
-        if (repo == null) return;
-        try {
-            // prefer direct call if available
-            java.util.List<?> items = repo.getVacations();
-            if (reportGenerator != null) {
-                reportGenerator.printToTerminal("Loaded " + (items == null ? 0 : items.size()) + " vacation(s)");
-            }
-            if (items != null) {
-                for (Object it : items) {
-                    if (it == null) continue;
-                    try {
-                        Method getId = it.getClass().getMethod("getId");
-                        Method getTitle = it.getClass().getMethod("getTitle");
-                        Method getStart = null;
-                        Method getEnd = null;
-                        // common names for date fields
-                        try { getStart = it.getClass().getMethod("getStartDate"); } catch (Exception ignored) {}
-                        try { getEnd = it.getClass().getMethod("getEndDate"); } catch (Exception ignored) {}
-                        // invoke safely
-                        Long id = null;
-                        String title = null;
-                        String start = null;
-                        String end = null;
-                        try { Object o = getId.invoke(it); if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue(); } catch (Exception ignored) {}
-                        try { Object o = getTitle.invoke(it); if (o != null) title = o.toString(); } catch (Exception ignored) {}
-                        try { if (getStart != null) { Object o = getStart.invoke(it); if (o != null) start = o.toString(); } } catch (Exception ignored) {}
-                        try { if (getEnd != null) { Object o = getEnd.invoke(it); if (o != null) end = o.toString(); } } catch (Exception ignored) {}
-
-                        if (reportGenerator != null) {
-                            reportGenerator.printVacationDebug(id, title, start, end);
-                        }
-
-                        // Try to print excursions by asking the repository for excursions for this vacation id
-                        if (id != null) {
-                            try {
-                                printExcursionsForVacation(repo, id);
-                            } catch (Exception ignored) {}
-                        }
-
-                    } catch (Exception e) {
-                        // fallback: print item toString
-                        if (reportGenerator != null) {
-                            reportGenerator.printToTerminal("Vacation: " + it.toString());
-                        }
-                        // still attempt to find excursions via repo if we can extract an id
-                        try {
-                            Method getId = it.getClass().getMethod("getId");
-                            Object o = getId.invoke(it);
-                            Long id = null;
-                            if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue();
-                            if (id != null) printExcursionsForVacation(repo, id);
-                        } catch (Exception ignored2) {}
-                    }
-                }
-            }
-            // update your adapter here, e.g. mAdapter.setItems(items); mAdapter.notifyDataSetChanged();
-        } catch (Exception e) {
-            // reflection fallback if repo method signature differs
-            try {
-                Method m = repo.getClass().getMethod("getVacations");
-                Object res = m.invoke(repo);
-                if (res instanceof List) {
-                    @SuppressWarnings("unchecked")
-                    List<?> items = (List<?>) res;
-                    if (reportGenerator != null) {
-                        reportGenerator.printToTerminal("Loaded (reflected) " + (items == null ? 0 : items.size()) + " vacation(s)");
-                    }
-                    if (items != null) {
-                        for (Object it : items) {
-                            if (it == null) continue;
-                            try {
-                                Method getId = it.getClass().getMethod("getId");
-                                Method getTitle = it.getClass().getMethod("getTitle");
-                                Method getStart = null;
-                                Method getEnd = null;
-                                try { getStart = it.getClass().getMethod("getStartDate"); } catch (Exception ignored) {}
-                                try { getEnd = it.getClass().getMethod("getEndDate"); } catch (Exception ignored) {}
-
-                                Long id = null;
-                                String title = null;
-                                String start = null;
-                                String end = null;
-                                try { Object o = getId.invoke(it); if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue(); } catch (Exception ignored) {}
-                                try { Object o = getTitle.invoke(it); if (o != null) title = o.toString(); } catch (Exception ignored) {}
-                                try { if (getStart != null) { Object o = getStart.invoke(it); if (o != null) start = o.toString(); } } catch (Exception ignored) {}
-                                try { if (getEnd != null) { Object o = getEnd.invoke(it); if (o != null) end = o.toString(); } } catch (Exception ignored) {}
-
-                                if (reportGenerator != null) {
-                                    reportGenerator.printVacationDebug(id, title, start, end);
-                                }
-
-                                if (id != null) {
-                                    try { printExcursionsForVacation(repo, id); } catch (Exception ignored) {}
-                                }
-                            } catch (Exception ignored) {
-                                if (reportGenerator != null) {
-                                    reportGenerator.printToTerminal("Vacation: " + it.toString());
-                                }
-                            }
-                        }
-                    }
-                    // update your adapter here
-                }
-            } catch (Exception ignored) {}
-        }
-    }
-
-    // Try to discover common repository methods that return excursions for a vacation id,
-    // invoke them reflectively and print each excursion.
     private void printExcursionsForVacation(Object repoObj, Long vacationId) {
         if (repoObj == null || vacationId == null || reportGenerator == null) return;
 
@@ -387,37 +544,24 @@ public class MainActivity extends AppCompatActivity {
         };
 
         Object found = null;
-        Method foundMethod = null;
         for (String name : candidateRepoMethods) {
             try {
-                // try Long wrapper
                 Method m = repoObj.getClass().getMethod(name, Long.class);
-                if (m != null) {
-                    foundMethod = m;
-                    found = m.invoke(repoObj, vacationId);
-                    if (found != null) break;
-                }
+                found = m.invoke(repoObj, vacationId);
+                if (found != null) break;
             } catch (NoSuchMethodException ignored) {
             } catch (Exception e) {
-                // try primitive long parameter
                 try {
                     Method m2 = repoObj.getClass().getMethod(name, long.class);
-                    if (m2 != null) {
-                        foundMethod = m2;
-                        found = m2.invoke(repoObj, vacationId.longValue());
-                        if (found != null) break;
-                    }
+                    found = m2.invoke(repoObj, vacationId.longValue());
+                    if (found != null) break;
                 } catch (Exception ignored2) {}
             }
-            // try zero-arg method (some repos return all excursions and filter client-side)
             if (found == null) {
                 try {
                     Method m0 = repoObj.getClass().getMethod(name);
-                    if (m0 != null) {
-                        foundMethod = m0;
-                        found = m0.invoke(repoObj);
-                        if (found != null) break;
-                    }
+                    found = m0.invoke(repoObj);
+                    if (found != null) break;
                 } catch (Exception ignored) {}
             }
         }
@@ -434,12 +578,10 @@ public class MainActivity extends AppCompatActivity {
 
         if (excList == null || excList.isEmpty()) return;
 
-        // If the repo returned a full list, filter by vacationId where possible
         List<Object> toPrint = new ArrayList<>();
         for (Object ex : excList) {
             if (ex == null) continue;
             boolean matches = true;
-            // if excursion has getVacationId, verify it matches
             try {
                 Method getVacId = ex.getClass().getMethod("getVacationId");
                 Object o = getVacId.invoke(ex);
@@ -470,7 +612,6 @@ public class MainActivity extends AppCompatActivity {
                 Method getDate = ex.getClass().getMethod("getExcursionDate");
                 try { Object o = getDate.invoke(ex); if (o != null) exDate = o.toString(); } catch (Exception ignored) {}
             } catch (Exception ignored) {}
-            // fallback common names
             if (exDate == null) {
                 String[] dateNames = new String[] {"getDate", "getStartDate", "getStart"};
                 for (String dn : dateNames) {
@@ -484,6 +625,27 @@ public class MainActivity extends AppCompatActivity {
             reportGenerator.printToTerminal("    Excursion id=" + (exId == null ? "null" : exId)
                     + ", title=\"" + (exTitle == null ? "" : exTitle) + "\""
                     + ", date=\"" + (exDate == null ? "" : exDate) + "\"");
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_NOTIF) {
+            boolean granted = grantResults != null && grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                NotificationScheduler.checkDatabaseAndNotifyToday(this);
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if ((requestCode == REQ_ADD || requestCode == REQ_DELETE) && resultCode == RESULT_OK) {
+            loadVacations();
         }
     }
 }
