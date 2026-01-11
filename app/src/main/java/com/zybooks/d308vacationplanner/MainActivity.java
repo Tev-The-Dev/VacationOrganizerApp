@@ -5,14 +5,17 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.PopupMenu;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -92,6 +95,7 @@ public class MainActivity extends AppCompatActivity {
     private void showNavMenu(View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
         popup.getMenu().add(0, 1, 0, "Generate report (all vacations)");
+        popup.getMenu().add(0, 2, 1, "Search vacation by id");
         popup.setOnMenuItemClickListener(this::onNavMenuItemClicked);
         popup.show();
     }
@@ -103,12 +107,140 @@ public class MainActivity extends AppCompatActivity {
                 reportGenerator.printToTerminal("User requested report generation");
                 // refresh/load current vacations and print each to terminal
                 loadVacations();
+                // indicate completion to the user
+                Toast.makeText(this, "Report Generated", Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(this, "Report generator unavailable", Toast.LENGTH_SHORT).show();
             }
             return true;
+        } else if (item.getItemId() == 2) {
+            // prompt the user for an id and search
+            promptAndSearchVacation();
+            return true;
         }
         return false;
+    }
+
+
+    private void promptAndSearchVacation() {
+        final EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        new AlertDialog.Builder(this)
+                .setTitle("Search vacation by id")
+                .setView(input)
+                .setPositiveButton("Search", (dialog, which) -> {
+                    String val = input.getText() == null ? "" : input.getText().toString().trim();
+                    if (val.isEmpty()) {
+                        if (reportGenerator != null) reportGenerator.printToTerminal("No id entered");
+                        Toast.makeText(MainActivity.this, "Please enter a vacation id to search", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    try {
+                        Long id = Long.parseLong(val);
+                        searchAndPrintVacation(id);
+                    } catch (NumberFormatException e) {
+                        if (reportGenerator != null) reportGenerator.printToTerminal("Invalid id: " + val);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    // Find a vacation by id (try repo direct methods then fallback to scanning all vacations).
+    // Print the vacation and associated excursions when found.
+    private void searchAndPrintVacation(Long vacationId) {
+        if (vacationId == null || reportGenerator == null) return;
+        VacationRepository repo = VacationRepository.getInstance(this);
+        if (repo == null) {
+            reportGenerator.printToTerminal("Repository unavailable");
+            return;
+        }
+
+        Object vacationObj = null;
+
+        // Try common repository methods that accept an id
+        String[] candidateMethods = new String[] {
+                "getVacation", "getVacationById", "findVacationById", "getById", "findById"
+        };
+
+        for (String name : candidateMethods) {
+            try {
+                Method m = repo.getClass().getMethod(name, Long.class);
+                Object res = m.invoke(repo, vacationId);
+                if (res != null) { vacationObj = res; break; }
+            } catch (NoSuchMethodException ignored) {
+            } catch (Exception e) {
+                // try primitive long
+                try {
+                    Method m2 = repo.getClass().getMethod(name, long.class);
+                    Object res2 = m2.invoke(repo, vacationId.longValue());
+                    if (res2 != null) { vacationObj = res2; break; }
+                } catch (Exception ignored2) {}
+            }
+        }
+
+        // fallback: iterate all vacations and match id
+        if (vacationObj == null) {
+            try {
+                List<?> all = repo.getVacations();
+                if (all != null) {
+                    for (Object it : all) {
+                        if (it == null) continue;
+                        try {
+                            Method getId = it.getClass().getMethod("getId");
+                            Object o = getId.invoke(it);
+                            Long vid = null;
+                            if (o instanceof Long) vid = (Long) o;
+                            else if (o instanceof Number) vid = ((Number) o).longValue();
+                            if (vid != null && vid.equals(vacationId)) {
+                                vacationObj = it;
+                                break;
+                            }
+                        } catch (Exception ignored) {}
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (vacationObj == null) {
+            reportGenerator.printToTerminal("Vacation id=" + vacationId + " not found");
+            Toast.makeText(MainActivity.this, "Invalid id entered. Please enter a numeric id", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Extract vacation fields and print
+        Long id = null;
+        String title = null;
+        String start = null;
+        String end = null;
+        try {
+            Method getId = vacationObj.getClass().getMethod("getId");
+            Object o = getId.invoke(vacationObj);
+            if (o instanceof Long) id = (Long) o; else if (o instanceof Number) id = ((Number) o).longValue();
+        } catch (Exception ignored) {}
+        try {
+            Method getTitle = vacationObj.getClass().getMethod("getTitle");
+            Object o = getTitle.invoke(vacationObj);
+            if (o != null) title = o.toString();
+        } catch (Exception ignored) {}
+        try {
+            Method getStart = vacationObj.getClass().getMethod("getStartDate");
+            Object o = getStart.invoke(vacationObj);
+            if (o != null) start = o.toString();
+        } catch (Exception ignored) {}
+        try {
+            Method getEnd = vacationObj.getClass().getMethod("getEndDate");
+            Object o = getEnd.invoke(vacationObj);
+            if (o != null) end = o.toString();
+        } catch (Exception ignored) {}
+
+        reportGenerator.printToTerminal("Search result:");
+        reportGenerator.printVacationDebug(id, title, start, end);
+
+        // Print associated excursions (uses existing helper)
+        try {
+            printExcursionsForVacation(repo, vacationId);
+        } catch (Exception ignored) {}
     }
 
     @Override

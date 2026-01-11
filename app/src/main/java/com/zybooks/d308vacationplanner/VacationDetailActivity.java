@@ -195,6 +195,21 @@ public class VacationDetailActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        // If the delete activity reported success, propagate result to parent and finish
+        if (requestCode == REQUEST_DELETE_VACATION) {
+            if (resultCode == RESULT_OK) {
+                Intent out = new Intent();
+                if (data != null && data.getExtras() != null) {
+                    out.putExtras(data.getExtras());
+                }
+                setResult(RESULT_OK, out);
+                finish();
+                return;
+            }
+            // If delete was canceled, continue to reload details below
+        }
+
         // keep existing flows unchanged; refresh displayed data
         reloadVacationDetails();
         // do NOT auto-schedule on return; leave manual control to the switch listener

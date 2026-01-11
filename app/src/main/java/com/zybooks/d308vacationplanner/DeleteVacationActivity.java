@@ -14,6 +14,9 @@ import java.util.List;
 
 public class DeleteVacationActivity extends AppCompatActivity {
 
+    private static final String ACTION_VACATIONS_CHANGED =
+            "com.zybooks.d308vacationplanner.ACTION_VACATIONS_CHANGED";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -102,6 +105,12 @@ public class DeleteVacationActivity extends AppCompatActivity {
             result.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
             // return standard OK so caller can refresh UI
             setResult(RESULT_OK, result);
+
+            // Notify other components in case the calling activity chain didn't propagate the result.
+            Intent bc = new Intent(ACTION_VACATIONS_CHANGED);
+            bc.putExtra(EditVacationActivity.EXTRA_VACATION_ID, vacationId);
+            bc.putExtra(EditVacationActivity.EXTRA_VACATION_DELETE, true);
+            sendBroadcast(bc);
         } else {
             Toast.makeText(this, "Vacation Failed", Toast.LENGTH_SHORT).show();
             setResult(RESULT_CANCELED);
