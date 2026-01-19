@@ -18,7 +18,7 @@
             android:parentActivityName=".ExcursionListActivity"
             android:exported="true"/>
         <activity android:name=".EditExcursionActivity"
-            android:parentActivityName=".ExcursionListActivity"
+            android:parentActivityName=".ExcursionDetailActivity"
             android:exported="true"/>
         <activity android:name=".DeleteExcursionActivity"
             android:parentActivityName=".ExcursionListActivity"

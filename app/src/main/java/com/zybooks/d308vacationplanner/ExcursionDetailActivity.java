@@ -151,18 +151,52 @@ public class ExcursionDetailActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        // Update local fields if returned and refresh UI
-        if (data != null) {
-            if (data.hasExtra("excursion_id")) mExcursionId = data.getLongExtra("excursion_id", mExcursionId);
-            if (data.hasExtra("excursion_title")) mExcursionTitle = data.getStringExtra("excursion_title");
-            if (data.hasExtra("excursion_date")) mExcursionDate = data.getStringExtra("excursion_date");
-            if (data.hasExtra("vacation_id")) mVacationId = data.getLongExtra("vacation_id", mVacationId);
-            if (data.hasExtra("vacation_title")) mVacationTitle = data.getStringExtra("vacation_title");
+
+        if (requestCode == REQUEST_EDIT_EXCURSION) {
+            if (data != null) {
+                if (data.hasExtra("excursion_id")) mExcursionId = data.getLongExtra("excursion_id", mExcursionId);
+                if (data.hasExtra("excursion_title")) mExcursionTitle = data.getStringExtra("excursion_title");
+                if (data.hasExtra("excursion_date")) mExcursionDate = data.getStringExtra("excursion_date");
+                if (data.hasExtra("vacation_id")) mVacationId = data.getLongExtra("vacation_id", mVacationId);
+                if (data.hasExtra("vacation_title")) mVacationTitle = data.getStringExtra("vacation_title");
+            }
+
+            reloadVacationInfo();
+            if (notificationToggle != null) {
+                notificationToggle.setChecked(getNotifyPrefExc(mExcursionId));
+            }
+
+            if (resultCode == RESULT_OK) {
+                // Propagate success to parent so ExcursionListActivity will reload
+                setResult(RESULT_OK);
+            }
+            return;
         }
-        reloadVacationInfo();
-        if (notificationToggle != null) {
-            notificationToggle.setChecked(getNotifyPrefExc(mExcursionId));
+
+        if (requestCode == REQUEST_DELETE_EXCURSION) {
+            if (resultCode == RESULT_OK) {
+                // Deletion succeeded in DeleteExcursionActivity -> propagate and finish this detail screen
+                setResult(RESULT_OK);
+                finish();
+                return;
+            } else {
+                // Deletion cancelled/failed: refresh UI in case any fields changed
+                if (data != null) {
+                    if (data.hasExtra("excursion_id")) mExcursionId = data.getLongExtra("excursion_id", mExcursionId);
+                    if (data.hasExtra("excursion_title")) mExcursionTitle = data.getStringExtra("excursion_title");
+                    if (data.hasExtra("excursion_date")) mExcursionDate = data.getStringExtra("excursion_date");
+                    if (data.hasExtra("vacation_id")) mVacationId = data.getLongExtra("vacation_id", mVacationId);
+                    if (data.hasExtra("vacation_title")) mVacationTitle = data.getStringExtra("vacation_title");
+                }
+                reloadVacationInfo();
+                if (notificationToggle != null) {
+                    notificationToggle.setChecked(getNotifyPrefExc(mExcursionId));
+                }
+                return;
+            }
         }
+
+        // other request codes - keep existing handling if any
     }
 
     @Override

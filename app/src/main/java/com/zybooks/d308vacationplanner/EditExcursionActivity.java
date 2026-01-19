@@ -171,6 +171,9 @@ public class EditExcursionActivity extends AppCompatActivity {
             Intent result = new Intent();
             result.putExtra(EXTRA_EXCURSION_ID, mExcursionId);
             result.putExtra("vacation_id", mParentVacationId);
+            // Add updated fields so caller can refresh immediately
+            result.putExtra(EXTRA_EXCURSION_TITLE, title);
+            result.putExtra(EXTRA_EXCURSION_DATE, date);
             setResult(RESULT_OK, result);
             finish();
         });
@@ -367,6 +370,9 @@ public class EditExcursionActivity extends AppCompatActivity {
             Intent result = new Intent();
             result.putExtra(EXTRA_EXCURSION_ID, mExcursionId);
             result.putExtra("vacation_id", mParentVacationId);
+            // Provide updated title/date so caller refreshes immediately
+            result.putExtra(EXTRA_EXCURSION_TITLE, safeText(mTitleInput));
+            result.putExtra(EXTRA_EXCURSION_DATE, safeText(mDateInput));
             setResult(RESULT_OK, result);
             finish();
         }
