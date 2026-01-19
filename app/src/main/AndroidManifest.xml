@@ -10,25 +10,31 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.D308VacationPlanner">
+        android:theme="@style/Theme.D308VacationPlanner"
+        android:name=".App">
         <receiver android:name=".NotificationReceiver"
             android:exported="false" />
         <activity android:name=".ExcursionDetailActivity"
             android:parentActivityName=".ExcursionListActivity"
             android:exported="true"/>
-
         <activity android:name=".EditExcursionActivity"
             android:parentActivityName=".ExcursionListActivity"
+            android:exported="true"/>
+        <activity android:name=".DeleteExcursionActivity"
+            android:parentActivityName=".ExcursionListActivity"
+            android:exported="true"/>
+        <activity android:name=".AddExcursionActivity"
+            android:parentActivityName=".VacationDetailActivity"
+            android:exported="true"/>
+        <activity android:name=".ExcursionListActivity"
+            android:parentActivityName=".VacationDetailActivity"
             android:exported="true"/>
 
         <activity android:name=".DeleteVacationActivity"
             android:parentActivityName=".VacationDetailActivity"
             android:exported="true"/>
-        <activity android:name=".EditVacationActivity"
-            android:parentActivityName=".VacationDetailActivity"
-            android:exported="true"/>
 
-        <activity android:name=".AddExcursionActivity"
+        <activity android:name=".EditVacationActivity"
             android:parentActivityName=".VacationDetailActivity"
             android:exported="true"/>
 
@@ -36,13 +42,9 @@
             android:parentActivityName=".VacationActivity"
             android:exported="true"/>
 
-        <activity android:name=".ExcursionListActivity"
-            android:parentActivityName=".VacationDetailActivity"
-            android:exported="true"/>
         <activity android:name=".VacationDetailActivity"
             android:parentActivityName=".VacationActivity"
             android:exported="true"/>
-
         <activity
             android:name=".VacationActivity"
             android:parentActivityName=".MainActivity"

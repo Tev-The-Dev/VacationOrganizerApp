@@ -306,7 +306,13 @@ public class VacationDetailActivity extends AppCompatActivity {
                 if (excursions != null && !excursions.isEmpty()) {
                     for (Excursions e : excursions) {
                         if (e != null && e.getVacationId() != null && e.getVacationId().longValue() == mId) {
-                            sb.append("  - ").append(safeString(e, "getTitle")).append("\n");
+                            String title = safeString(e, "getTitle");
+                            String date = safeString(e, "getExcursionDate");
+                            sb.append("  - ").append(title);
+                            if (date != null && !date.isEmpty()) {
+                                sb.append(" (").append(date).append(")");
+                            }
+                            sb.append("\n");
                         }
                     }
                 } else {

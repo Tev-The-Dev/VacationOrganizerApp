@@ -25,3 +25,6 @@ Saving will return you to the Excursion List page. Tapping on an excursion will 
 * If you tap the "Up" or "Back" button at anytime, it will return you to the previous, parent, screen.
 * Gitlab: https://gitlab.com/wgu-gitlab-environment/student-repos/tpay177/d308-mobile-application-development-android/-/tree/Working_Branch?ref_type=heads
 * Android Version: 16.0 "Baklava" | release 36
+* Android SDK: Otter
+* Build: Gradle
+* Language: Java

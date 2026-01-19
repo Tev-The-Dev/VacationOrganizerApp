@@ -1,7 +1,12 @@
 package com.zybooks.d308vacationplanner;
 
+import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -22,18 +27,21 @@ public class ExcursionListActivity extends AppCompatActivity {
     private static final int REQ_DETAIL = 101;
 
     private long mVacationId = -1L;
+    private static final String TAG = "ExcursionListActivity";
 
+    private BroadcastReceiver mDeleteReceiver;
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "onCreate");
         setContentView(R.layout.excursion_list);
 
-        // show Up button in action bar
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
         }
 
-        // Restore saved state first so the filter persists across recreations
         if (savedInstanceState != null) {
             mVacationId = savedInstanceState.getLong("vacation_id", -1L);
             String vacationTitle = savedInstanceState.getString("vacation_title");
@@ -63,7 +71,53 @@ public class ExcursionListActivity extends AppCompatActivity {
             });
         }
 
+        // create receiver instance but register in onResume
+        mDeleteReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                long deletedId = intent != null ? intent.getLongExtra(DeleteExcursionActivity.EXTRA_EXCURSION_ID, -1L) : -1L;
+                Log.i(TAG, "onReceive: excursion deleted broadcast id=" + deletedId);
+                loadExcursions();
+                ExcursionListActivity.this.setResult(RESULT_OK);
+            }
+        };
+
+        // initial load
         loadExcursions();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        try {
+            IntentFilter filter = new IntentFilter(DeleteExcursionActivity.ACTION_EXCURSION_DELETED);
+            registerReceiver(mDeleteReceiver, filter);
+            Log.i(TAG, "receiver registered");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to register receiver", e);
+        }
+        // reload in case parent signalled change
+        loadExcursions();
+    }
+
+    @Override
+    protected void onPause() {
+        try {
+            if (mDeleteReceiver != null) unregisterReceiver(mDeleteReceiver);
+            Log.i(TAG, "receiver unregistered");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to unregister receiver", e);
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // defensive: ensure receiver gone
+        try {
+            if (mDeleteReceiver != null) unregisterReceiver(mDeleteReceiver);
+        } catch (Exception ignored) { }
+        super.onDestroy();
     }
 
     @Override
@@ -79,14 +133,12 @@ public class ExcursionListActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if ((requestCode == REQ_ADD || requestCode == REQ_DETAIL) && resultCode == RESULT_OK) {
             loadExcursions();
-            // Notify parent (VacationDetailActivity) that something changed so it can reload
             setResult(RESULT_OK);
         }
     }
 
     @Override
     public void onBackPressed() {
-        // ensure parent reloads and preserve single instance
         setResult(RESULT_OK);
         super.onBackPressed();
     }
@@ -94,7 +146,6 @@ public class ExcursionListActivity extends AppCompatActivity {
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == android.R.id.home) {
-            // Up pressed - finish and signal parent to reload
             setResult(RESULT_OK);
             finish();
             return true;
@@ -110,15 +161,33 @@ public class ExcursionListActivity extends AppCompatActivity {
     }
 
     private void loadExcursions() {
+        Log.i(TAG, "loadExcursions start for vacationId=" + mVacationId);
         LinearLayout container = findViewById(R.id.vacation_container);
-        if (container == null) return;
+        if (container == null) {
+            Log.w(TAG, "loadExcursions: container view is null. Check excursion_list.xml id `vacation_container`");
+            return;
+        }
 
         container.removeAllViews();
 
-        VacationRepository repo = VacationRepository.getInstance(this);
-        if (repo == null) return;
+        VacationRepository repo;
+        try {
+            repo = VacationRepository.getInstance(this);
+        } catch (Exception e) {
+            Log.w(TAG, "loadExcursions: repo.getInstance failed", e);
+            TextView error = new TextView(this);
+            error.setText("Unable to load excursions");
+            container.addView(error);
+            return;
+        }
 
-        List<Excursions> excursions = repo.getExcursions();
+        List<Excursions> excursions = null;
+        try {
+            excursions = repo.getExcursions();
+        } catch (Exception e) {
+            Log.w(TAG, "loadExcursions: repo.getExcursions failed", e);
+        }
+
         if (excursions == null || excursions.isEmpty()) {
             TextView empty = new TextView(this);
             empty.setText("No excursions");
@@ -141,14 +210,25 @@ public class ExcursionListActivity extends AppCompatActivity {
             View item = inflater.inflate(R.layout.excursion_item, container, false);
 
             Button titleBtn = item.findViewById(R.id.item_title);
+            if (titleBtn == null) {
+                Log.w(TAG, "loadExcursions: item_title not found in excursion_item layout");
+                continue;
+            }
+
             String title = (e.getTitle() != null) ? e.getTitle() : "";
             titleBtn.setText(title);
 
+            // Ensure the button can receive clicks and capture id/title into final locals
+            titleBtn.setClickable(true);
+            titleBtn.setFocusable(false);
+            final long clickId = (e.getId() != null) ? e.getId() : -1L;
+            final String clickTitle = title;
+
             titleBtn.setOnClickListener(view -> {
-                long id = (e.getId() != null) ? e.getId() : -1L;
+                Log.i(TAG, "item click: excursion id=" + clickId + " title=\"" + clickTitle + "\"");
                 Intent intent = new Intent(ExcursionListActivity.this, ExcursionDetailActivity.class);
-                intent.putExtra("excursion_id", id);
-                intent.putExtra("excursion_title", title);
+                intent.putExtra("excursion_id", clickId);
+                intent.putExtra("excursion_title", clickTitle);
                 intent.putExtra("vacation_id", mVacationId);
                 startActivityForResult(intent, REQ_DETAIL);
             });
@@ -163,5 +243,6 @@ public class ExcursionListActivity extends AppCompatActivity {
             empty.setTextSize(18f);
             container.addView(empty);
         }
+        Log.i(TAG, "loadExcursions finished, itemsAdded=" + added);
     }
 }

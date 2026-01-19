@@ -49,7 +49,6 @@ public class MainActivity extends AppCompatActivity {
 
     // Guards so we only check/ask once per process launch
     private static boolean sNotificationsChecked = false;
-    private static boolean sAuthenticated = false; // process-lifetime auth flag
 
     private ReportGenerator reportGenerator;
     private View mVacationsButton;
@@ -91,7 +90,7 @@ public class MainActivity extends AppCompatActivity {
         ensureDefaultCredentials();
 
         // Only prompt for login if not already authenticated in this process
-        if (sAuthenticated) {
+        if (AuthState.isAuthenticated()) {
             revealVacationsButton();
         } else {
             showLoginDialog();
@@ -186,7 +185,7 @@ public class MainActivity extends AppCompatActivity {
                             if (reportGenerator != null) reportGenerator.printToTerminal("Default credentials used; forcing change");
                             showChangeCredentialsDialog();
                         } else {
-                            sAuthenticated = true;
+                            AuthState.setAuthenticated(true);
                             revealVacationsButton();
                         }
                     } else {
@@ -278,7 +277,7 @@ public class MainActivity extends AppCompatActivity {
                     if (reportGenerator != null) reportGenerator.printToTerminal("Credentials changed for user: " + newUser);
                     Toast.makeText(MainActivity.this, "Credentials updated", Toast.LENGTH_SHORT).show();
 
-                    sAuthenticated = true;
+                    AuthState.setAuthenticated(true);
                     revealVacationsButton();
                 })
                 .setNegativeButton("Cancel", (dialog, which) -> {
