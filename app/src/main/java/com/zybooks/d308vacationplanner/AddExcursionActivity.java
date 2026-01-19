@@ -1,3 +1,4 @@
+// java
 package com.zybooks.d308vacationplanner;
 
 import android.Manifest;
@@ -16,6 +17,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.zybooks.d308vacationplanner.model.Excursions;
+import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
@@ -68,8 +70,27 @@ public class AddExcursionActivity extends AppCompatActivity {
                 return;
             }
 
-            // Validate date against vacation range
-            if (!isDateInRange(date, mVacationStartStr, mVacationEndStr)) {
+            // Use repository-provided vacation start/end when available
+            VacationRepository repo = VacationRepository.getInstance(this);
+            String vacStart = mVacationStartStr;
+            String vacEnd = mVacationEndStr;
+            if (repo != null && mParentVacationId != -1L) {
+                try {
+                    List<Vacations> vlist = repo.getVacations();
+                    if (vlist != null) {
+                        for (Vacations vv : vlist) {
+                            if (vv != null && vv.getId() != null && vv.getId().longValue() == mParentVacationId) {
+                                vacStart = vv.getStartDate();
+                                vacEnd = vv.getEndDate();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) { }
+            }
+
+            // Validate date against vacation range (using resolved vacStart/vacEnd)
+            if (!isDateInRange(date, vacStart, vacEnd)) {
                 Toast.makeText(this, "Excursion date must be between vacation start and end.", Toast.LENGTH_LONG).show();
                 setResult(RESULT_CANCELED);
                 return;
@@ -81,7 +102,6 @@ public class AddExcursionActivity extends AppCompatActivity {
             ex.setExcursionDate(date);
             ex.setVacationId(mParentVacationId == -1L ? null : Long.valueOf(mParentVacationId));
 
-            VacationRepository repo = VacationRepository.getInstance(this);
             boolean saved = persistNewExcursion(repo, ex);
 
             if (!saved) {

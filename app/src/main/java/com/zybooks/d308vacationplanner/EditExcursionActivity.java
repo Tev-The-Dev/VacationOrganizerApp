@@ -1,3 +1,4 @@
+// java
 package com.zybooks.d308vacationplanner;
 
 import android.Manifest;
@@ -16,6 +17,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.zybooks.d308vacationplanner.model.Excursions;
+import com.zybooks.d308vacationplanner.model.Vacations;
 import com.zybooks.d308vacationplanner.repo.VacationRepository;
 
 import java.lang.reflect.Method;
@@ -90,10 +92,29 @@ public class EditExcursionActivity extends AppCompatActivity {
                 mDateInput.setError(null);
             }
 
+            // Determine vacation start/end from repository if available (override intent values)
+            VacationRepository repo = VacationRepository.getInstance(this);
+            String vacStart = mVacationStartStr;
+            String vacEnd = mVacationEndStr;
+            if (repo != null && mParentVacationId != -1L) {
+                try {
+                    List<Vacations> vlist = repo.getVacations();
+                    if (vlist != null) {
+                        for (Vacations vv : vlist) {
+                            if (vv != null && vv.getId() != null && vv.getId().longValue() == mParentVacationId) {
+                                vacStart = vv.getStartDate();
+                                vacEnd = vv.getEndDate();
+                                break;
+                            }
+                        }
+                    }
+                } catch (Exception ignored) { }
+            }
+
             // Validate date is within vacation start/end bounds (if provided)
             Long dateMillis = parseYmdToMillis(date);
-            Long startMillis = parseYmdToMillis(mVacationStartStr);
-            Long endMillis = parseYmdToMillis(mVacationEndStr);
+            Long startMillis = parseYmdToMillis(vacStart);
+            Long endMillis = parseYmdToMillis(vacEnd);
             if (startMillis != null && dateMillis != null && dateMillis < startMillis) {
                 String msg = "Excursion date must be on or after vacation start date";
                 mDateInput.setError(msg);
@@ -108,13 +129,13 @@ public class EditExcursionActivity extends AppCompatActivity {
             }
             mDateInput.setError(null);
 
-            VacationRepository repo = VacationRepository.getInstance(this);
+            VacationRepository repo2 = VacationRepository.getInstance(this);
             boolean updated = false;
             Excursions target = null;
 
-            if (repo != null) {
+            if (repo2 != null) {
                 try {
-                    List<Excursions> list = repo.getExcursions();
+                    List<Excursions> list = repo2.getExcursions();
                     if (list != null) {
                         for (Excursions ex : list) {
                             if (ex == null) continue;
@@ -145,7 +166,7 @@ public class EditExcursionActivity extends AppCompatActivity {
                 return;
             }
 
-            boolean persisted = persistEditedExcursion(repo, target);
+            boolean persisted = persistEditedExcursion(repo2, target);
             if (!persisted) {
                 Log.w(TAG, "Failed to persist edited excursion via repository");
                 setResult(RESULT_CANCELED);
@@ -320,7 +341,7 @@ public class EditExcursionActivity extends AppCompatActivity {
         todayStart.set(Calendar.MILLISECOND, 0);
 
         if (parsedCal.getTimeInMillis() < todayStart.getTimeInMillis()) {
-            return new ValidationResult(false, "Date must be today or later");
+            return new ValidationResult(false, "Excursion date must be on or after vacation start date");
         }
 
         return new ValidationResult(true, null);
